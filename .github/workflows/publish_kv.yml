@@ -2,12 +2,15 @@ name: Scrape and publish to Cloudflare KV
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # cada 10 minutos
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: 0
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,9 +24,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright browsers (Chromium)
+      - name: Install Playwright Chromium + deps
         run: |
+          python -m playwright --version
           python -m playwright install --with-deps chromium
+          ls -la ~/.cache/ms-playwright || true
+
+      - name: Clean previous output
+        run: |
+          rm -f data/tasas.json || true
 
       - name: Run scrapers
         run: |
@@ -31,9 +40,8 @@ jobs:
 
       - name: Verify output exists
         run: |
-          ls -la
-          ls -la data || true
           test -f data/tasas.json
+          head -c 300 data/tasas.json || true
 
       - name: Upload tasas.json to Cloudflare KV
         env:
