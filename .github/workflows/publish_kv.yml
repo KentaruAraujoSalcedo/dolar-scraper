@@ -2,13 +2,14 @@ name: Scrape and publish to Cloudflare KV
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/10 * * * *"   # cada 10 minutos
   workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
+      # fuerza a Playwright a usar el path estándar del runner
       PLAYWRIGHT_BROWSERS_PATH: 0
 
     steps:
@@ -41,7 +42,8 @@ jobs:
       - name: Verify output exists
         run: |
           test -f data/tasas.json
-          head -c 300 data/tasas.json || true
+          test -f data/meta.json
+          cat data/meta.json
 
       - name: Upload tasas.json to Cloudflare KV
         env:
