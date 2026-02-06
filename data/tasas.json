@@ -119,7 +119,7 @@
     "casa": "DinersFX",
     "url": "https://dinersfx.pe/",
     "compra": 3.343,
-    "venta": 3.437,
+    "venta": 3.417,
     "source": "scraper"
   },
   {
@@ -251,7 +251,10 @@
     "url": "https://www.moneyplus.pe/",
     "compra": 3.35,
     "venta": 3.375,
-    "source": "scraper"
+    "source": "last_known",
+    "last_seen": "2026-02-06",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: APIRequestContext.get: Timeout 60000ms exceeded.\nCall log:\n  - → GET https://moneyplus.pseperu.pro/api/exchange-rates/last-exchange-rate\n    - user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36\n    - accept: */*\n    - accept-encoding: gzip,deflate,br\n"
   },
   {
     "casa": "Okane",
@@ -354,7 +357,10 @@
     "url": "https://www.westernunionperu.pe/cambiodemoneda",
     "compra": 3.348,
     "venta": 3.379,
-    "source": "scraper"
+    "source": "last_known",
+    "last_seen": "2026-02-06",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: Page.goto: net::ERR_CERT_COMMON_NAME_INVALID at https://www.westernunionperu.pe/cambiodemoneda\nCall log:\n  - navigating to \"https://www.westernunionperu.pe/cambiodemoneda\", waiting until \"load\"\n"
   },
   {
     "casa": "X-Cambio",
