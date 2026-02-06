@@ -1,9 +1,9 @@
 {
-  "run_at_utc": "2026-02-06T11:55+00:00",
+  "run_at_utc": "2026-02-06T12:59+00:00",
   "run_date": "2026-02-06",
   "total": 51,
-  "ok_scraper": 43,
-  "fallback_last_known": 8,
+  "ok_scraper": 44,
+  "fallback_last_known": 7,
   "fallback_backup": 0,
   "missing": 0
 }
