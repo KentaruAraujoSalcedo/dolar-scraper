@@ -9,7 +9,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # fuerza a Playwright a usar el path estándar del runner
       PLAYWRIGHT_BROWSERS_PATH: 0
 
     steps:
@@ -33,7 +32,7 @@ jobs:
 
       - name: Clean previous output
         run: |
-          rm -f data/tasas.json || true
+          rm -f data/tasas.json data/meta.json data/historico.json data/last_known_tasas.json || true
 
       - name: Run scrapers
         run: |
@@ -43,6 +42,8 @@ jobs:
         run: |
           test -f data/tasas.json
           test -f data/meta.json
+          test -f data/historico.json
+          test -f data/last_known_tasas.json
           cat data/meta.json
 
       - name: Upload tasas.json to Cloudflare KV
@@ -56,3 +57,39 @@ jobs:
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-binary @data/tasas.json
+
+      - name: Upload meta.json to Cloudflare KV
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          curl -sS -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/meta.json" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @data/meta.json
+
+      - name: Upload historico.json to Cloudflare KV
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          curl -sS -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/historico.json" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @data/historico.json
+
+      - name: Upload last_known_tasas.json to Cloudflare KV
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          curl -sS -X PUT \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/last_known_tasas.json" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @data/last_known_tasas.json
