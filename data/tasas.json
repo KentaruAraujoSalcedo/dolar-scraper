@@ -144,10 +144,7 @@
     "url": "https://www.global66.com/pe/envios-de-dinero/",
     "compra": 3.511,
     "venta": 3.511,
-    "source": "last_known",
-    "last_seen": "2026-02-06",
-    "backup_fecha": "2026-01-20",
-    "scraper_error": "No se pudo scrapear: Respuesta inesperada: originAmount=None, destinationAmount=None"
+    "source": "scraper"
   },
   {
     "casa": "HirPower",
@@ -335,8 +332,8 @@
   {
     "casa": "TuCambista",
     "url": "https://tucambista.pe/",
-    "compra": 3.34,
-    "venta": 3.341,
+    "compra": 3.352,
+    "venta": 3.381,
     "source": "scraper",
     "swapped": true
   },
