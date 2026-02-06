@@ -337,8 +337,7 @@
     "url": "https://tucambista.pe/",
     "compra": 3.352,
     "venta": 3.381,
-    "source": "scraper",
-    "swapped": true
+    "source": "scraper"
   },
   {
     "casa": "VipCapital",
