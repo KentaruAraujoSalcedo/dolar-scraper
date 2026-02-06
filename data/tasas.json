@@ -251,10 +251,7 @@
     "url": "https://www.moneyplus.pe/",
     "compra": 3.35,
     "venta": 3.375,
-    "source": "last_known",
-    "last_seen": "2026-02-06",
-    "backup_fecha": "2026-01-20",
-    "scraper_error": "No se pudo scrapear: APIRequestContext.get: Timeout 60000ms exceeded.\nCall log:\n  - → GET https://moneyplus.pseperu.pro/api/exchange-rates/last-exchange-rate\n    - user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36\n    - accept: */*\n    - accept-encoding: gzip,deflate,br\n"
+    "source": "scraper"
   },
   {
     "casa": "Okane",
