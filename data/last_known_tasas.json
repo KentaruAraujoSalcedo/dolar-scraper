@@ -60,8 +60,8 @@
     "Dichikash": {
       "casa": "Dichikash",
       "url": "https://dichikash.com/",
-      "compra": 3.362,
-      "venta": 3.376,
+      "compra": 3.361,
+      "venta": 3.379,
       "last_seen": "2026-02-06"
     },
     "Instakash": {
@@ -118,7 +118,7 @@
       "url": "https://kallpacambios.com/",
       "compra": 3.349,
       "venta": 3.379,
-      "last_seen": "2026-02-05"
+      "last_seen": "2026-02-06"
     },
     "Billex": {
       "casa": "Billex",
@@ -292,7 +292,7 @@
       "casa": "DinersFX",
       "url": "https://dinersfx.pe/",
       "compra": 3.343,
-      "venta": 3.437,
+      "venta": 3.417,
       "last_seen": "2026-02-06"
     },
     "CambioDigitalPeru": {
@@ -354,8 +354,8 @@
     "MoneyPlus": {
       "casa": "MoneyPlus",
       "url": "https://www.moneyplus.pe/",
-      "compra": 3.364,
-      "venta": 3.369,
+      "compra": 3.35,
+      "venta": 3.375,
       "last_seen": "2026-02-06"
     },
     "Roblex": {
@@ -363,13 +363,13 @@
       "url": "https://roblex.pe/",
       "compra": 3.351,
       "venta": 3.375,
-      "last_seen": "2026-02-05"
+      "last_seen": "2026-02-06"
     },
     "Global66": {
       "casa": "Global66",
       "url": "https://www.global66.com/pe/envios-de-dinero/",
-      "compra": 3.515,
-      "venta": 3.515,
+      "compra": 3.511,
+      "venta": 3.511,
       "last_seen": "2026-02-06"
     }
   }

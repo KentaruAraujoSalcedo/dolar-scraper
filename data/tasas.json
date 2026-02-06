@@ -104,8 +104,8 @@
   {
     "casa": "Dichikash",
     "url": "https://dichikash.com/",
-    "compra": 3.362,
-    "venta": 3.376,
+    "compra": 3.361,
+    "venta": 3.379,
     "source": "scraper"
   },
   {
@@ -119,7 +119,7 @@
     "casa": "DinersFX",
     "url": "https://dinersfx.pe/",
     "compra": 3.343,
-    "venta": 3.437,
+    "venta": 3.417,
     "source": "scraper"
   },
   {
@@ -142,8 +142,8 @@
   {
     "casa": "Global66",
     "url": "https://www.global66.com/pe/envios-de-dinero/",
-    "compra": 3.515,
-    "venta": 3.515,
+    "compra": 3.511,
+    "venta": 3.511,
     "source": "scraper"
   },
   {
@@ -186,10 +186,7 @@
     "url": "https://kallpacambios.com/",
     "compra": 3.349,
     "venta": 3.379,
-    "source": "last_known",
-    "last_seen": "2026-02-05",
-    "backup_fecha": "2026-01-20",
-    "scraper_error": "No se pudo scrapear: Page.wait_for_function: Timeout 25000ms exceeded."
+    "source": "scraper"
   },
   {
     "casa": "Kambio",
@@ -246,8 +243,8 @@
   {
     "casa": "MoneyPlus",
     "url": "https://www.moneyplus.pe/",
-    "compra": 3.364,
-    "venta": 3.369,
+    "compra": 3.35,
+    "venta": 3.375,
     "source": "scraper"
   },
   {
@@ -283,10 +280,7 @@
     "url": "https://roblex.pe/",
     "compra": 3.351,
     "venta": 3.375,
-    "source": "last_known",
-    "last_seen": "2026-02-05",
-    "backup_fecha": "2026-01-20",
-    "scraper_error": "No se pudo scrapear: No se pudieron leer tasas (compra_raw='Compra:', venta_raw='Venta:')"
+    "source": "scraper"
   },
   {
     "casa": "Safex",
