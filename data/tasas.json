@@ -1,0 +1,378 @@
+[
+  {
+    "casa": "Acomo",
+    "url": "https://acomo.com.pe/",
+    "compra": 3.359,
+    "venta": 3.378,
+    "source": "scraper"
+  },
+  {
+    "casa": "Billex",
+    "url": "https://www.billex.pe/",
+    "compra": 3.351,
+    "venta": 3.382,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambiaFX",
+    "url": "https://cambiafx.pe/",
+    "compra": 3.351,
+    "venta": 3.381,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambioDigitalPeru",
+    "url": "https://cambiodigitalperu.com",
+    "compra": 3.36,
+    "venta": 3.371,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambioMas",
+    "url": "https://cambiosmass.com/",
+    "compra": 3.36,
+    "venta": 3.37,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambioMundial",
+    "url": "https://www.cambiomundial.com/",
+    "compra": 3.356,
+    "venta": 3.362,
+    "source": "last_known",
+    "last_seen": "2026-01-30",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: Page.wait_for_function: Timeout 20000ms exceeded."
+  },
+  {
+    "casa": "CambioSeguro",
+    "url": "https://cambioseguro.com/",
+    "compra": 3.356,
+    "venta": 3.383,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambiosElGordito",
+    "url": "https://cambioselgordito.com/",
+    "compra": 3.36,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambioSol",
+    "url": "https://cambiosol.pe/",
+    "compra": 3.36,
+    "venta": 3.377,
+    "source": "scraper"
+  },
+  {
+    "casa": "CambioX",
+    "url": "https://cambiox.pe/",
+    "compra": 3.35,
+    "venta": 3.38,
+    "source": "scraper"
+  },
+  {
+    "casa": "Cambix",
+    "url": "https://cambix.com.pe/",
+    "compra": 3.35,
+    "venta": 3.37,
+    "source": "scraper"
+  },
+  {
+    "casa": "ChapaCambio",
+    "url": "https://chapacambio.com/",
+    "compra": 3.353,
+    "venta": 3.383,
+    "source": "scraper"
+  },
+  {
+    "casa": "ChaskiDolar",
+    "url": "https://chaskidolar.com/",
+    "compra": 3.354,
+    "venta": 3.375,
+    "source": "scraper",
+    "swapped": true
+  },
+  {
+    "casa": "DefiPeru",
+    "url": "https://defiperu.com/change/FIAT",
+    "compra": 3.36,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "Dichikash",
+    "url": "https://dichikash.com/",
+    "compra": 3.364,
+    "venta": 3.374,
+    "source": "scraper"
+  },
+  {
+    "casa": "DineKash",
+    "url": "https://dinekash.pe/",
+    "compra": 3.36,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "DinersFX",
+    "url": "https://dinersfx.pe/",
+    "compra": 3.343,
+    "venta": 3.417,
+    "source": "scraper"
+  },
+  {
+    "casa": "Dolarex",
+    "url": "https://dolarex.pe/",
+    "compra": 3.364,
+    "venta": 3.369,
+    "source": "last_known",
+    "last_seen": "2026-02-05",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: Page.wait_for_selector: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\".compra .valor\") to be visible\n    - locator resolved to hidden <span class=\"valor\" _ngcontent-dry-c1=\"\"></span>\n"
+  },
+  {
+    "casa": "DollarHouse",
+    "url": "https://app.dollarhouse.pe/",
+    "compra": 3.363,
+    "venta": 3.371,
+    "source": "scraper"
+  },
+  {
+    "casa": "Global66",
+    "url": "https://www.global66.com/pe/envios-de-dinero/",
+    "compra": 3.515,
+    "venta": 3.515,
+    "source": "last_known",
+    "last_seen": "2026-02-05",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: Respuesta inesperada: originAmount=None, destinationAmount=None"
+  },
+  {
+    "casa": "HirPower",
+    "url": "https://hirpower.com/",
+    "compra": 3.35,
+    "venta": 3.38,
+    "source": "scraper"
+  },
+  {
+    "casa": "InkaMoney",
+    "url": "https://inkamoney.com/",
+    "compra": 3.35,
+    "venta": 3.369,
+    "source": "scraper"
+  },
+  {
+    "casa": "Intercambialo",
+    "url": "https://intercambialo.pe/",
+    "compra": 3.351,
+    "venta": 3.378,
+    "source": "scraper"
+  },
+  {
+    "casa": "IntiCambio",
+    "url": "https://inticambio.pe/",
+    "compra": 3.363,
+    "venta": 3.368,
+    "source": "scraper"
+  },
+  {
+    "casa": "JetPerú",
+    "url": "https://jetperu.com.pe/cambiar-dinero/",
+    "compra": 3.365,
+    "venta": 3.368,
+    "source": "scraper"
+  },
+  {
+    "casa": "KallpaCambios",
+    "url": "https://kallpacambios.com/",
+    "compra": 3.349,
+    "venta": 3.379,
+    "source": "scraper"
+  },
+  {
+    "casa": "Kambio",
+    "url": "https://www.kambio.online/",
+    "compra": 3.35,
+    "venta": 3.38,
+    "source": "scraper"
+  },
+  {
+    "casa": "MarketDollar",
+    "url": "https://market-dollar.com/",
+    "compra": 3.363,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "MegaMoney",
+    "url": "https://megamoney.pe/",
+    "compra": 3.35,
+    "venta": 3.38,
+    "source": "scraper"
+  },
+  {
+    "casa": "MercadoCambiario",
+    "url": "https://mercadocambiario.pe/",
+    "compra": 3.365,
+    "venta": 3.369,
+    "source": "last_known",
+    "last_seen": "2026-02-05",
+    "backup_fecha": "2026-01-20",
+    "scraper_error": "No se pudo scrapear: Page.wait_for_function: Timeout 30000ms exceeded."
+  },
+  {
+    "casa": "MidpointFX",
+    "url": "https://www.midpointfx.com/",
+    "compra": 3.355,
+    "venta": 3.385,
+    "source": "scraper"
+  },
+  {
+    "casa": "MisterDollar",
+    "url": "https://misterdollar.pe/",
+    "compra": 3.361,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "MoneyHouse",
+    "url": "https://moneyhouse.pe/",
+    "compra": 3.364,
+    "venta": 3.369,
+    "source": "scraper"
+  },
+  {
+    "casa": "MoneyPlus",
+    "url": "https://www.moneyplus.pe/",
+    "compra": 3.364,
+    "venta": 3.369,
+    "source": "scraper"
+  },
+  {
+    "casa": "Okane",
+    "url": "https://okanecambiodigital.com/",
+    "compra": 3.33,
+    "venta": 3.39,
+    "source": "scraper"
+  },
+  {
+    "casa": "PeruDolar",
+    "url": "https://perudolar.pe/",
+    "compra": 3.3,
+    "venta": 3.4,
+    "source": "scraper"
+  },
+  {
+    "casa": "Rextie",
+    "url": "https://www.rextie.com/",
+    "compra": 3.3485,
+    "venta": 3.3815,
+    "source": "scraper"
+  },
+  {
+    "casa": "RissanPE",
+    "url": "https://www.rissanpe.com/",
+    "compra": 3.35,
+    "venta": 3.37,
+    "source": "scraper"
+  },
+  {
+    "casa": "Roblex",
+    "url": "https://roblex.pe/",
+    "compra": 3.351,
+    "venta": 3.375,
+    "source": "scraper"
+  },
+  {
+    "casa": "Safex",
+    "url": "https://www.safex.pe/",
+    "compra": 3.355,
+    "venta": 3.377,
+    "source": "last_known",
+    "last_seen": "2026-02-05",
+    "backup_fecha": "2026-01-20"
+  },
+  {
+    "casa": "Securex",
+    "url": "https://securex.pe/",
+    "compra": 3.353,
+    "venta": 3.3795,
+    "source": "scraper"
+  },
+  {
+    "casa": "SmartDollar",
+    "url": "https://www.smartdollar.pe/",
+    "compra": 3.35,
+    "venta": 3.368,
+    "source": "scraper"
+  },
+  {
+    "casa": "SRCambio",
+    "url": "https://srcambio.pe/",
+    "compra": 3.423,
+    "venta": 3.431,
+    "source": "scraper"
+  },
+  {
+    "casa": "SUNAT",
+    "url": "https://www.sunat.gob.pe/cl-at-ittipcam/tcS01Alias",
+    "compra": 3.356,
+    "venta": 3.364,
+    "source": "scraper"
+  },
+  {
+    "casa": "Tkambio",
+    "url": "https://tkambio.com/",
+    "compra": 3.354,
+    "venta": 3.38,
+    "source": "scraper"
+  },
+  {
+    "casa": "TuCambista",
+    "url": "https://tucambista.pe/",
+    "compra": 3.352,
+    "venta": 3.379,
+    "source": "scraper",
+    "swapped": true
+  },
+  {
+    "casa": "VipCapital",
+    "url": "https://www.vipcapitalbusiness.com/",
+    "compra": 3.36,
+    "venta": 3.38,
+    "source": "last_known",
+    "last_seen": "2026-02-05",
+    "backup_fecha": "2026-01-20"
+  },
+  {
+    "casa": "WesternUnion",
+    "url": "https://www.westernunionperu.pe/cambiodemoneda",
+    "compra": 3.348,
+    "venta": 3.379,
+    "source": "scraper"
+  },
+  {
+    "casa": "X-Cambio",
+    "url": "https://x-cambio.com/",
+    "compra": 3.352,
+    "venta": 3.379,
+    "source": "scraper"
+  },
+  {
+    "casa": "Yanki",
+    "url": "https://yanki.pe",
+    "compra": 3.361,
+    "venta": 3.377,
+    "source": "scraper"
+  },
+  {
+    "casa": "ZonaDólar",
+    "url": "https://zonadolar.pe/",
+    "compra": 3.321,
+    "venta": 3.399,
+    "source": "scraper",
+    "swapped": true
+  }
+]

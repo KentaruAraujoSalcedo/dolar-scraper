@@ -1,0 +1,293 @@
+{
+  "fecha_backup": "2026-01-20",
+  "casas": [
+    {
+      "casa": "Acomo",
+      "url": "https://acomo.com.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Billex",
+      "url": "https://www.billex.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambiaFX",
+      "url": "https://cambiafx.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambioDigitalPeru",
+      "url": "https://cambiodigitalperu.com",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambioMas",
+      "url": "https://cambiosmass.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambioSeguro",
+      "url": "https://cambioseguro.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambioSol",
+      "url": "https://cambiosol.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "CambioX",
+      "url": "https://cambiox.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Cambix",
+      "url": "https://cambix.com.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "ChapaCambio",
+      "url": "https://chapacambio.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "ChaskiDolar",
+      "url": "https://chaskidolar.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "DeFiPeru",
+      "url": "https://defiperu.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Dichikash",
+      "url": "https://dichikash.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "DineKash",
+      "url": "https://dinekash.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "DinersFX",
+      "url": "https://dinersfx.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "DollarHouse",
+      "url": "https://app.dollarhouse.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Dolarex",
+      "url": "https://dolarex.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "GorditoDigital",
+      "url": "https://cambioselgordito.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "HirPower",
+      "url": "https://hirpower.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "InkaMoney",
+      "url": "https://inkamoney.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Instakash",
+      "url": "https://instakash.net/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "IntiCambio",
+      "url": "https://inticambio.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Intercambialo",
+      "url": "https://intercambialo.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "JetPerú",
+      "url": "https://jetperu.com.pe/cambiar-dinero/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "KallpaCambios",
+      "url": "https://kallpacambios.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Kambista",
+      "url": "https://kambista.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Kambio",
+      "url": "https://www.kambio.online/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "MarketDollar",
+      "url":  "https://market-dollar.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "MegaMoney",
+      "url": "https://megamoney.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "MercadoCambiario",
+      "url": "https://mercadocambiario.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "MidpointFX",
+      "url": "https://www.midpointfx.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "MoneyPlus",
+      "url": "https://www.moneyplus.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Okane",
+      "url": "https://okanecambiodigital.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "PeruDolar",
+      "url": "https://perudolar.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Rextie",
+      "url": "https://www.rextie.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "RissanPE",
+      "url": "https://www.rissanpe.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Safex",
+      "url": "https://www.safex.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Securex",
+      "url": "https://securex.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "SmartDollar",
+      "url": "https://www.smartdollar.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "SRCambio",
+      "url": "https://srcambio.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "SUNAT",
+      "url": "https://www.sunat.gob.pe/cl-at-ittipcam/tcS01Alias",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Tkambio",
+      "url": "https://tkambio.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "TuCambista",
+      "url": "https://tucambista.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "VipCapital",
+      "url": "https://www.vipcapitalbusiness.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "WesternUnion",
+      "url": "https://www.westernunionperu.pe/cambiodemoneda",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "X-Cambio",
+      "url": "https://x-cambio.com/",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "Yanki",
+      "url": "https://yanki.pe",
+      "compra": 3.000,
+      "venta": 3.000
+    },
+    {
+      "casa": "ZonaDólar",
+      "url": "https://zonadolar.pe/",
+      "compra": 3.000,
+      "venta": 3.000
+    }
+  ]
+}
