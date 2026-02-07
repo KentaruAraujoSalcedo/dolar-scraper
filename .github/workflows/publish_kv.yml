@@ -5,6 +5,10 @@ on:
     - cron: "*/10 * * * *"   # cada 10 minutos
   workflow_dispatch:
 
+concurrency:
+  group: scrape-and-publish
+  cancel-in-progress: true
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -30,9 +34,10 @@ jobs:
           python -m playwright install --with-deps chromium
           ls -la ~/.cache/ms-playwright || true
 
+      # ✅ solo borra lo que se regenera siempre
       - name: Clean previous output
         run: |
-          rm -f data/tasas.json data/meta.json data/historico.json data/last_known_tasas.json || true
+          rm -f data/tasas.json data/meta.json || true
 
       - name: Run scrapers
         run: |
