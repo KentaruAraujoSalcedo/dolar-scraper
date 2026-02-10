@@ -61,19 +61,23 @@ from scrapers.x_cambio import scrap_x_cambio
 from scrapers.yanki import scrap_yanki
 from scrapers.zonadolar import scrap_zonadolar
 
-
 # 1) Helper: correr scrapers sin que uno tumbe todo el proceso
 async def _safe_call(name: str, coro):
-    """Ejecuta un scraper y evita que una excepción tumbe todo el proceso."""
+    """
+    Ejecuta un scraper y evita que una excepción tumbe todo el proceso.
+    SIEMPRE retorna un dict (en caso de error o None, devuelve un dict con 'error').
+    """
     try:
         res = await coro
         if res is None:
             print(f"⚠️ {name}: devolvió None")
+            return {"casa": name, "url": None, "compra": None, "venta": None, "error": "returned_none"}
         return res
     except Exception as e:
         print(f"❌ {name}: error -> {e}")
-        return None
-    
+        return {"casa": name, "url": None, "compra": None, "venta": None, "error": str(e)}
+
+
 # 2) Backup: cargar backup_tasas.json (manual)
 #    Este file debe estar en: data/backup_tasas.json
 def load_backup_map(path="data/backup_tasas.json"):
@@ -105,7 +109,8 @@ def is_valid_rate(item: dict) -> bool:
         return item.get("compra") is not None and item.get("venta") is not None
     except Exception:
         return False
-    
+
+
 def fix_inverted_compra_venta(items):
     """
     Corrige casas que vienen con compra/venta invertidas.
@@ -121,7 +126,7 @@ def fix_inverted_compra_venta(items):
         if isinstance(c, (int, float)) and isinstance(v, (int, float)):
             if c > v:
                 r["compra"], r["venta"] = v, c
-                r["swapped"] = True  # opcional (debug)
+                r["swapped"] = True  # debug opcional
     return items
 
 
@@ -162,7 +167,7 @@ def apply_fallbacks(results, last_map, backup_map, fecha_backup=None):
                 "venta": lk.get("venta"),
                 "source": "last_known",
                 "last_seen": lk.get("last_seen"),
-                "backup_fecha": fecha_backup
+                "backup_fecha": fecha_backup,
             }
             if r.get("error"):
                 merged_item["scraper_error"] = r["error"]
@@ -187,7 +192,9 @@ def apply_fallbacks(results, last_map, backup_map, fecha_backup=None):
         # 4) Missing
         merged_item = {
             "casa": casa,
-            "url": r.get("url") or (lk.get("url") if isinstance(lk, dict) else None) or (b.get("url") if isinstance(b, dict) else None),
+            "url": r.get("url")
+            or (lk.get("url") if isinstance(lk, dict) else None)
+            or (b.get("url") if isinstance(b, dict) else None),
             "source": "missing",
             "backup_fecha": fecha_backup,
         }
@@ -196,6 +203,7 @@ def apply_fallbacks(results, last_map, backup_map, fecha_backup=None):
         merged_by_casa[casa] = merged_item
 
     return list(merged_by_casa.values())
+
 
 # 2.5) Last known: cargar/guardar último valor válido (auto)
 def load_last_known(path="data/last_known_tasas.json"):
@@ -216,13 +224,8 @@ def load_last_known(path="data/last_known_tasas.json"):
 
 
 def save_last_known(last_map, path="data/last_known_tasas.json"):
-    """
-    Guarda last_map en disco.
-    """
-    payload = {
-        "updated_at": str(date.today()),
-        "casas": last_map
-    }
+    """Guarda last_map en disco."""
+    payload = {"updated_at": str(date.today()), "casas": last_map}
     os.makedirs(Path(path).parent, exist_ok=True)
     Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -245,15 +248,16 @@ def update_last_known_from_scraper_results(raw_results, last_map):
                 "url": r.get("url"),
                 "compra": r.get("compra"),
                 "venta": r.get("venta"),
-                "last_seen": hoy
+                "last_seen": hoy,
             }
     return last_map
+
 
 # 3) MAIN: ejecuta scrapers, aplica backup, guarda tasas, histórico
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
 
-    # ---- Lista de scrapers (ordenados) ----
+# ---- Lista de scrapers (ordenados) ----
     tasks = [
         ("acomo", scrap_acomo()),
         ("billex", scrap_billex()),
@@ -311,18 +315,18 @@ async def main():
         ("zonadolar", scrap_zonadolar()),
     ]
 
-    # ---- Ejecutar scrapers secuencialmente (más estable) ----
+    # ---- Ejecutar scrapers secuencialmente ----
     resultados = []
     for name, coro in tasks:
         resultados.append(await _safe_call(name, coro))
 
-    # ---- Limpiar resultados (quitar None / cosas raras) ----
-    resultados_raw = [r for r in resultados if isinstance(r, dict)]
+    # ---- Resultados crudos (incluye los dict con error) ----
+    resultados_raw = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
     # ---- Cargar last known ----
     last_map, last_updated_at = load_last_known("data/last_known_tasas.json")
 
-    # ---- Actualizar last known con los scrapers que salieron bien HOY ----
+    # ---- Actualizar last known con los scrapers OK hoy ----
     last_map = update_last_known_from_scraper_results(resultados_raw, last_map)
     save_last_known(last_map, "data/last_known_tasas.json")
     print("💾 Last-known actualizado (data/last_known_tasas.json)")
@@ -330,37 +334,51 @@ async def main():
     # ---- Cargar backup manual ----
     backup_map, fecha_backup = load_backup_map("data/backup_tasas.json")
 
-    # ---- Aplicar fallbacks: scraper > last_known > backup > missing ----
-    resultados = apply_fallbacks(resultados_raw, last_map, backup_map, fecha_backup)
+    # ---- Aplicar fallbacks ----
+    resultados_final = apply_fallbacks(resultados_raw, last_map, backup_map, fecha_backup)
     print(f"🧩 Fallbacks aplicados (backup_fecha={fecha_backup}, last_known_updated_at={last_updated_at})")
 
-    # ✅ Fix: si una casa viene con compra/venta invertidas, las corregimos
-    resultados = fix_inverted_compra_venta(resultados)
+    # ---- Fix inversión ----
+    resultados_final = fix_inverted_compra_venta(resultados_final)
 
-    # ---- Guardar tasas finales (scraper + backup) ----
+    # ---- Guardar tasas finales ----
     os.makedirs("data", exist_ok=True)
     with open("data/tasas.json", "w", encoding="utf-8") as f:
-        json.dump(resultados, f, ensure_ascii=False, indent=2)
+        json.dump(resultados_final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
+
+    # ---- Meta detallado ----
+    ok = [r["casa"] for r in resultados_final if r.get("source") == "scraper" and r.get("casa")]
+    lk = [r["casa"] for r in resultados_final if r.get("source") == "last_known" and r.get("casa")]
+    bk = [r["casa"] for r in resultados_final if r.get("source") == "backup" and r.get("casa")]
+    ms = [r["casa"] for r in resultados_final if r.get("source") == "missing" and r.get("casa")]
+
+    fails = []
+    for r in resultados_final:
+        if r.get("scraper_error"):
+            fails.append({"casa": r.get("casa"), "error": r.get("scraper_error")})
 
     meta = {
         "run_at_utc": run_at,
         "run_date": str(date.today()),
-        "total": len(resultados),
-        "ok_scraper": sum(1 for r in resultados if isinstance(r, dict) and r.get("source") == "scraper"),
-        "fallback_last_known": sum(1 for r in resultados if isinstance(r, dict) and r.get("source") == "last_known"),
-        "fallback_backup": sum(1 for r in resultados if isinstance(r, dict) and r.get("source") == "backup"),
-        "missing": sum(1 for r in resultados if isinstance(r, dict) and r.get("source") == "missing"),
+        "total": len(resultados_final),
+        "ok_scraper": len(ok),
+        "fallback_last_known": len(lk),
+        "fallback_backup": len(bk),
+        "missing": len(ms),
+        "ok_list": ok,
+        "fallback_last_known_list": lk,
+        "fallback_backup_list": bk,
+        "missing_list": ms,
+        "scraper_errors": fails[:50],
     }
 
     with open("data/meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-
     print("🧾 Meta guardada en data/meta.json")
 
-
-    # 4) HISTÓRICO SUNAT (solo toma SUNAT y lo guarda por fecha)
-    sunat_data = next((r for r in resultados_raw if str(r.get("casa","")).strip().lower() == "sunat"), None)
+    # 4) HISTÓRICO SUNAT (solo toma SUNAT CRUDO y lo guarda por fecha si es válido)
+    sunat_data = next((r for r in resultados_raw if str(r.get("casa", "")).strip().lower() == "sunat"), None)
     if sunat_data and sunat_data.get("compra") and sunat_data.get("venta"):
         sunat_compra = sunat_data["compra"]
         sunat_venta = sunat_data["venta"]
@@ -381,13 +399,17 @@ async def main():
         historico = [d for d in historico if isinstance(d, dict) and d.get("fecha") != hoy]
         historico.append({"fecha": hoy, "compra": sunat_compra, "venta": sunat_venta})
 
-        # Guardar histórico
         with open(historico_path, "w", encoding="utf-8") as f:
             json.dump(historico, f, ensure_ascii=False, indent=2)
 
         print(f"📈 Histórico SUNAT actualizado: {hoy} Compra {sunat_compra} / Venta {sunat_venta}")
     else:
-        print("⚠️ SUNAT no devolvió datos válidos. Se deja histórico sin cambios.")
+        # Si falló, imprimimos el error si existe
+        err = sunat_data.get("error") if isinstance(sunat_data, dict) else None
+        if err:
+            print(f"⚠️ SUNAT no devolvió datos válidos. Error: {err}")
+        else:
+            print("⚠️ SUNAT no devolvió datos válidos. Se deja histórico sin cambios.")
 
 
 if __name__ == "__main__":
