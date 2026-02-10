@@ -1,8 +1,6 @@
 name: Scrape and publish to Cloudflare KV
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"   # cada 10 minutos
   workflow_dispatch:
 
 concurrency:
