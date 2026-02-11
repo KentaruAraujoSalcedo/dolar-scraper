@@ -31,40 +31,7 @@ jobs:
           python -m playwright --version
           python -m playwright install --with-deps chromium
 
-      # ✅ Solo traemos last_known_tasas.json del KV (ya no usamos historico.json)
-      - name: Download last_known_tasas.json from Cloudflare KV (validated)
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: |
-          mkdir -p data
-
-          echo "⬇️ Download last_known_tasas.json from KV..."
-          curl -f -sS \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/last_known_tasas.json" \
-            -o data/last_known_tasas.json || true
-
-          if [ ! -s data/last_known_tasas.json ]; then
-            echo "⚠️ last_known_tasas.json vacío/no existe en KV. Inicializando estructura"
-            echo '{"updated_at":null,"casas":{}}' > data/last_known_tasas.json
-          fi
-
-          python - << 'PY'
-          import json
-          p="data/last_known_tasas.json"
-          with open(p,"r",encoding="utf-8") as f:
-              data=json.load(f)
-          if not isinstance(data, dict):
-              raise SystemExit("last_known_tasas.json no es objeto JSON")
-          print("✅ last_known_tasas.json OK.")
-          PY
-
-          echo "✅ Files in data/:"
-          ls -lah data
-
-      # ✅ solo borra lo que se regenera siempre
+      # ✅ Solo borra lo que se regenera siempre
       - name: Clean previous output
         run: |
           rm -f data/tasas.json data/meta.json data/sunat_mensual.json || true
@@ -77,7 +44,6 @@ jobs:
         run: |
           test -f data/tasas.json
           test -f data/meta.json
-          test -f data/last_known_tasas.json
           test -f data/sunat_mensual.json
 
           echo "meta.json:"
@@ -121,15 +87,3 @@ jobs:
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-binary @data/sunat_mensual.json
-
-      - name: Upload last_known_tasas.json to Cloudflare KV
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: |
-          curl -f -sS -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/last_known_tasas.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-binary @data/last_known_tasas.json
