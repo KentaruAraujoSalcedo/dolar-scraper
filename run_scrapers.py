@@ -53,7 +53,7 @@ from scrapers.safex import scrap_safex
 from scrapers.securex import scrap_securex
 from scrapers.smartdollar import scrap_smartdollar
 from scrapers.srcambio import scrap_srcambio
-from scrapers.sunat import scrap_sunat
+from scrapers.sunat import scrap_sunat  # <- se usa SOLO para sunat_mensual.json (no va a tasas)
 from scrapers.tkambio import scrap_tkambio
 from scrapers.tucambista import scrap_tucambista
 from scrapers.vipcapitalbusiness import scrap_vipcapitalbusiness
@@ -61,6 +61,7 @@ from scrapers.westernunion import scrap_westernunion
 from scrapers.x_cambio import scrap_x_cambio
 from scrapers.yanki import scrap_yanki
 from scrapers.zonadolar import scrap_zonadolar
+
 
 # 1) Helper: correr scrapers sin que uno tumbe todo el proceso
 async def _safe_call(name: str, coro):
@@ -80,7 +81,6 @@ async def _safe_call(name: str, coro):
 
 
 # 2) Backup: cargar backup_tasas.json (manual)
-#    Este file debe estar en: data/backup_tasas.json
 def load_backup_map(path="data/backup_tasas.json"):
     """
     Lee el backup manual y lo convierte en un mapa:
@@ -95,7 +95,6 @@ def load_backup_map(path="data/backup_tasas.json"):
     fecha_backup = data.get("fecha_backup")
     casas = data.get("casas", [])
 
-    # Mapa por nombre exacto de "casa"
     backup_map = {
         c.get("casa"): c
         for c in casas
@@ -194,8 +193,8 @@ def apply_fallbacks(results, last_map, backup_map, fecha_backup=None):
         merged_item = {
             "casa": casa,
             "url": r.get("url")
-            or (lk.get("url") if isinstance(lk, dict) else None)
-            or (b.get("url") if isinstance(b, dict) else None),
+                   or (lk.get("url") if isinstance(lk, dict) else None)
+                   or (b.get("url") if isinstance(b, dict) else None),
             "source": "missing",
             "backup_fecha": fecha_backup,
         }
@@ -223,17 +222,18 @@ def load_last_known(path="data/last_known_tasas.json"):
         casas = {}
     return casas, updated_at
 
+
 def save_last_known(last_map, updated_at, path="data/last_known_tasas.json"):
     payload = {"updated_at": updated_at, "casas": last_map}
     os.makedirs(Path(path).parent, exist_ok=True)
     Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def update_last_known_from_scraper_results(raw_results, last_map, hoy):
     """
     Recorre resultados crudos de scrapers y si una casa tiene compra/venta válidos,
     actualiza last_map[casa] con esos valores (y last_seen=hoy).
     """
-    
     for r in raw_results:
         if not isinstance(r, dict):
             continue
@@ -251,12 +251,12 @@ def update_last_known_from_scraper_results(raw_results, last_map, hoy):
     return last_map
 
 
-# 3) MAIN: ejecuta scrapers, aplica backup, guarda tasas, histórico
+# 3) MAIN: ejecuta scrapers, aplica backup, guarda tasas, meta, y sunat_mensual (separado)
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
     hoy_lima = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
 
-    # ---- Lista de scrapers (ordenados) ----
+    # ---- Lista de scrapers (SIN SUNAT dentro de tasas) ----
     tasks = [
         ("acomo", scrap_acomo()),
         ("billex", scrap_billex()),
@@ -275,13 +275,13 @@ async def main():
         ("dichikash", scrap_dichikash()),
         ("dinekash", scrap_dinekash()),
         ("dinersfx", scrap_dinersfx()),
-        #("dlsmoney", scrap_dlsmoney()),
+        # ("dlsmoney", scrap_dlsmoney()),
         ("dolarex", scrap_dolarex()),
         ("dollarhouse", scrap_dollarhouse()),
         ("global66", scrap_global66()),
         ("hirpower", scrap_hirpower()),
         ("inkamoney", scrap_inkamoney()),
-        #("instakash", scrap_instakash()),
+        # ("instakash", scrap_instakash()),
         ("intercambialo", scrap_intercambialo()),
         ("inticambio", scrap_inticambio()),
         ("jetperu", scrap_jetperu()),
@@ -304,7 +304,6 @@ async def main():
         ("securex", scrap_securex()),
         ("smartdollar", scrap_smartdollar()),
         ("srcambio", scrap_srcambio()),
-        ("sunat", scrap_sunat()),
         ("tkambio", scrap_tkambio()),
         ("tucambista", scrap_tucambista()),
         ("vipcapitalbusiness", scrap_vipcapitalbusiness()),
@@ -376,40 +375,21 @@ async def main():
         json.dump(meta, f, ensure_ascii=False, indent=2)
     print("🧾 Meta guardada en data/meta.json")
 
-    # 4) HISTÓRICO SUNAT (solo toma SUNAT CRUDO y lo guarda por fecha si es válido)
-    sunat_data = next((r for r in resultados_raw if str(r.get("casa", "")).strip().lower() == "sunat"), None)
-    if sunat_data and sunat_data.get("compra") and sunat_data.get("venta"):
-        sunat_compra = sunat_data["compra"]
-        sunat_venta = sunat_data["venta"]
-        hoy = hoy_lima
+    # ===============================
+    # ✅ SUNAT MENSUAL (separado)
+    # Genera data/sunat_mensual.json con TODO lo visible del mes en la página de SUNAT
+    # OJO: esto asume que scrap_sunat() devuelve {"dias":[...], "mes":"YYYY-MM", ...}
+    # ===============================
+    sunat_mensual = await _safe_call("sunat_mensual", scrap_sunat())
 
-        historico_path = "data/historico.json"
-
-        # Leer histórico actual
-        if os.path.exists(historico_path):
-            with open(historico_path, "r", encoding="utf-8") as f:
-                historico = json.load(f)
-                if not isinstance(historico, list):
-                    historico = []
-        else:
-            historico = []
-
-        # Evitar duplicar el mismo día
-        historico = [d for d in historico if isinstance(d, dict) and d.get("fecha") != hoy]
-        historico.append({"fecha": hoy, "compra": sunat_compra, "venta": sunat_venta})
-        historico.sort(key=lambda x: x.get("fecha", ""))
-
-        with open(historico_path, "w", encoding="utf-8") as f:
-            json.dump(historico, f, ensure_ascii=False, indent=2)
-
-        print(f"📈 Histórico SUNAT actualizado: {hoy} Compra {sunat_compra} / Venta {sunat_venta}")
+    if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
+        os.makedirs("data", exist_ok=True)
+        with open("data/sunat_mensual.json", "w", encoding="utf-8") as f:
+            json.dump(sunat_mensual, f, ensure_ascii=False, indent=2)
+        print(f"✅ SUNAT mensual guardado en data/sunat_mensual.json (dias={len(sunat_mensual['dias'])})")
     else:
-        # Si falló, imprimimos el error si existe
-        err = sunat_data.get("error") if isinstance(sunat_data, dict) else None
-        if err:
-            print(f"⚠️ SUNAT no devolvió datos válidos. Error: {err}")
-        else:
-            print("⚠️ SUNAT no devolvió datos válidos. Se deja histórico sin cambios.")
+        err = sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"
+        print(f"⚠️ No se pudo generar SUNAT mensual. Error: {err}")
 
 
 if __name__ == "__main__":
