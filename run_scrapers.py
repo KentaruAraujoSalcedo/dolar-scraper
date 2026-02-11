@@ -377,20 +377,35 @@ async def main():
 
     # ===============================
     # ✅ SUNAT MENSUAL (separado)
-    # Genera data/sunat_mensual.json con TODO lo visible del mes en la página de SUNAT
-    # OJO: esto asume que scrap_sunat() devuelve {"dias":[...], "mes":"YYYY-MM", ...}
+    # Siempre crea data/sunat_mensual.json (aunque falle), para que el workflow no se caiga
     # ===============================
     sunat_mensual = await _safe_call("sunat_mensual", scrap_sunat())
 
-    if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
-        os.makedirs("data", exist_ok=True)
-        with open("data/sunat_mensual.json", "w", encoding="utf-8") as f:
-            json.dump(sunat_mensual, f, ensure_ascii=False, indent=2)
-        print(f"✅ SUNAT mensual guardado en data/sunat_mensual.json (dias={len(sunat_mensual['dias'])})")
-    else:
-        err = sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"
-        print(f"⚠️ No se pudo generar SUNAT mensual. Error: {err}")
+    os.makedirs("data", exist_ok=True)
+    out_path = "data/sunat_mensual.json"
 
+    # Si el scraper devolvió el formato esperado
+    if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
+        payload = {
+            **sunat_mensual,
+            "run_date": hoy_lima,
+            "run_at_utc": run_at,
+        }
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"✅ SUNAT mensual guardado en {out_path} (dias={len(sunat_mensual['dias'])})")
+    else:
+        # Guardamos un json “de error” pero válido
+        payload = {
+            "casa": "SUNAT",
+            "run_date": hoy_lima,
+            "run_at_utc": run_at,
+            "dias": [],
+            "error": (sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"),
+        }
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        print(f"⚠️ SUNAT mensual FALLÓ. Se guardó {out_path} con error para no romper el workflow.")
 
 if __name__ == "__main__":
     asyncio.run(main())
