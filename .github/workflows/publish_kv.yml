@@ -31,40 +31,14 @@ jobs:
           python -m playwright --version
           python -m playwright install --with-deps chromium
 
-      # ✅ Traer histórico actual del KV ANTES de correr scrapers (para acumular)
-      - name: Download historico.json and last_known_tasas.json from Cloudflare KV (validated)
+      # ✅ Solo traemos last_known_tasas.json del KV (ya no usamos historico.json)
+      - name: Download last_known_tasas.json from Cloudflare KV (validated)
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
         run: |
           mkdir -p data
-
-          echo "⬇️ Download historico.json from KV..."
-          curl -f -sS \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/historico.json" \
-            -o data/historico.json || true
-
-          # Si no existe en KV (404) o está vacío, empezamos con []
-          if [ ! -s data/historico.json ]; then
-            echo "⚠️ historico.json vacío/no existe en KV. Inicializando []"
-            echo "[]" > data/historico.json
-          fi
-
-          # Validar que sea JSON lista
-          python - << 'PY'
-          import json
-          p="data/historico.json"
-          with open(p,"r",encoding="utf-8") as f:
-              data=json.load(f)
-          if not isinstance(data, list):
-              raise SystemExit("historico.json no es lista JSON")
-          print("✅ historico.json OK. len =", len(data))
-          if data:
-              print("first =", data[0])
-              print("last  =", data[-1])
-          PY
 
           echo "⬇️ Download last_known_tasas.json from KV..."
           curl -f -sS \
@@ -93,7 +67,7 @@ jobs:
       # ✅ solo borra lo que se regenera siempre
       - name: Clean previous output
         run: |
-          rm -f data/tasas.json data/meta.json || true
+          rm -f data/tasas.json data/meta.json data/sunat_mensual.json || true
 
       - name: Run scrapers
         run: |
@@ -103,12 +77,14 @@ jobs:
         run: |
           test -f data/tasas.json
           test -f data/meta.json
-          test -f data/historico.json
           test -f data/last_known_tasas.json
+          test -f data/sunat_mensual.json
+
           echo "meta.json:"
           cat data/meta.json
-          echo "historico.json tail:"
-          tail -n 30 data/historico.json || true
+
+          echo "sunat_mensual.json (head):"
+          head -n 40 data/sunat_mensual.json || true
 
       - name: Upload tasas.json to Cloudflare KV
         env:
@@ -134,17 +110,17 @@ jobs:
             -H "Content-Type: application/json" \
             --data-binary @data/meta.json
 
-      - name: Upload historico.json to Cloudflare KV
+      - name: Upload sunat_mensual.json to Cloudflare KV
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
         run: |
           curl -f -sS -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/historico.json" \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/sunat_mensual.json" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data-binary @data/historico.json
+            --data-binary @data/sunat_mensual.json
 
       - name: Upload last_known_tasas.json to Cloudflare KV
         env:
