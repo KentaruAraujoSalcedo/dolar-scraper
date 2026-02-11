@@ -52,7 +52,7 @@ from scrapers.safex import scrap_safex
 from scrapers.securex import scrap_securex
 from scrapers.smartdollar import scrap_smartdollar
 from scrapers.srcambio import scrap_srcambio
-from scrapers.sunat import scrap_sunat  # <- se usa SOLO para sunat_mensual.json (no va a tasas)
+from scrapers.sunat import scrap_sunat  # ✅ SOLO para sunat_mensual.json (no va a tasas)
 from scrapers.tkambio import scrap_tkambio
 from scrapers.tucambista import scrap_tucambista
 from scrapers.vipcapitalbusiness import scrap_vipcapitalbusiness
@@ -60,9 +60,6 @@ from scrapers.westernunion import scrap_westernunion
 from scrapers.x_cambio import scrap_x_cambio
 from scrapers.yanki import scrap_yanki
 from scrapers.zonadolar import scrap_zonadolar
-
-# SUNAT mensual (separado)
-from scrapers.sunat import scrap_sunat
 
 
 def is_valid_rate(item: dict) -> bool:
@@ -87,17 +84,22 @@ def fix_inverted_compra_venta(items):
 async def _safe_call(name: str, coro):
     """
     Ejecuta un scraper y no tumba el proceso.
-    Retorna dict con 'casa' siempre.
+    Retorna dict SIEMPRE.
     """
     try:
         res = await coro
         if res is None or not isinstance(res, dict):
-            return {"casa": name, "url": None, "compra": None, "venta": None, "error": "returned_none_or_not_dict"}
-        res.setdefault("casa", name)
+            return {"casa": name, "url": None, "compra": None, "venta": None, "scraper_error": "returned_none_or_not_dict"}
+
+        # ✅ si el scraper no mandó casa, la ponemos
+        if not res.get("casa"):
+            res["casa"] = name
+
         res.setdefault("url", None)
         return res
+
     except Exception as e:
-        return {"casa": name, "url": None, "compra": None, "venta": None, "error": str(e)}
+        return {"casa": name, "url": None, "compra": None, "venta": None, "scraper_error": str(e)}
 
 
 async def main():
@@ -152,7 +154,6 @@ async def main():
         ("securex", scrap_securex()),
         ("smartdollar", scrap_smartdollar()),
         ("srcambio", scrap_srcambio()),
-        # ("sunat", scrap_sunat()),
         ("tkambio", scrap_tkambio()),
         ("tucambista", scrap_tucambista()),
         ("vipcapitalbusiness", scrap_vipcapitalbusiness()),
@@ -174,8 +175,6 @@ async def main():
             r["source"] = "scraper"
         else:
             r["source"] = "missing"
-            if r.get("error"):
-                r["scraper_error"] = r["error"]
 
     resultados = fix_inverted_compra_venta(resultados)
 
@@ -221,7 +220,7 @@ async def main():
             "run_date": hoy_lima,
             "run_at_utc": run_at,
             "dias": [],
-            "error": (sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"),
+            "error": (sunat_mensual.get("scraper_error") if isinstance(sunat_mensual, dict) else "unknown"),
         }
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
