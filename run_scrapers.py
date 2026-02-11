@@ -3,7 +3,8 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 # ===== IMPORTS DE SCRAPERS =====
 from scrapers.acomo import scrap_acomo
@@ -222,20 +223,17 @@ def load_last_known(path="data/last_known_tasas.json"):
         casas = {}
     return casas, updated_at
 
-
-def save_last_known(last_map, path="data/last_known_tasas.json"):
-    """Guarda last_map en disco."""
-    payload = {"updated_at": str(date.today()), "casas": last_map}
+def save_last_known(last_map, updated_at, path="data/last_known_tasas.json"):
+    payload = {"updated_at": updated_at, "casas": last_map}
     os.makedirs(Path(path).parent, exist_ok=True)
     Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-
-def update_last_known_from_scraper_results(raw_results, last_map):
+def update_last_known_from_scraper_results(raw_results, last_map, hoy):
     """
     Recorre resultados crudos de scrapers y si una casa tiene compra/venta válidos,
     actualiza last_map[casa] con esos valores (y last_seen=hoy).
     """
-    hoy = str(date.today())
+    
     for r in raw_results:
         if not isinstance(r, dict):
             continue
@@ -256,8 +254,9 @@ def update_last_known_from_scraper_results(raw_results, last_map):
 # 3) MAIN: ejecuta scrapers, aplica backup, guarda tasas, histórico
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
+    hoy_lima = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
 
-# ---- Lista de scrapers (ordenados) ----
+    # ---- Lista de scrapers (ordenados) ----
     tasks = [
         ("acomo", scrap_acomo()),
         ("billex", scrap_billex()),
@@ -327,8 +326,8 @@ async def main():
     last_map, last_updated_at = load_last_known("data/last_known_tasas.json")
 
     # ---- Actualizar last known con los scrapers OK hoy ----
-    last_map = update_last_known_from_scraper_results(resultados_raw, last_map)
-    save_last_known(last_map, "data/last_known_tasas.json")
+    last_map = update_last_known_from_scraper_results(resultados_raw, last_map, hoy_lima)
+    save_last_known(last_map, hoy_lima, "data/last_known_tasas.json")
     print("💾 Last-known actualizado (data/last_known_tasas.json)")
 
     # ---- Cargar backup manual ----
@@ -360,7 +359,7 @@ async def main():
 
     meta = {
         "run_at_utc": run_at,
-        "run_date": str(date.today()),
+        "run_date": hoy_lima,
         "total": len(resultados_final),
         "ok_scraper": len(ok),
         "fallback_last_known": len(lk),
@@ -382,7 +381,7 @@ async def main():
     if sunat_data and sunat_data.get("compra") and sunat_data.get("venta"):
         sunat_compra = sunat_data["compra"]
         sunat_venta = sunat_data["venta"]
-        hoy = str(date.today())
+        hoy = hoy_lima
 
         historico_path = "data/historico.json"
 
@@ -398,6 +397,7 @@ async def main():
         # Evitar duplicar el mismo día
         historico = [d for d in historico if isinstance(d, dict) and d.get("fecha") != hoy]
         historico.append({"fecha": hoy, "compra": sunat_compra, "venta": sunat_venta})
+        historico.sort(key=lambda x: x.get("fecha", ""))
 
         with open(historico_path, "w", encoding="utf-8") as f:
             json.dump(historico, f, ensure_ascii=False, indent=2)
