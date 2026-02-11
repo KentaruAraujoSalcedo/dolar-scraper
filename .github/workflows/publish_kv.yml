@@ -32,7 +32,7 @@ jobs:
           python -m playwright install --with-deps chromium
 
       # ✅ Traer histórico actual del KV ANTES de correr scrapers (para acumular)
-      - name: Download historico.json and last_known_tasas.json from Cloudflare KV
+      - name: Download historico.json and last_known_tasas.json from Cloudflare KV (validated)
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
@@ -41,21 +41,54 @@ jobs:
           mkdir -p data
 
           echo "⬇️ Download historico.json from KV..."
-          curl -sS \
+          curl -f -sS \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/historico.json" \
             -o data/historico.json || true
-          test -s data/historico.json || rm -f data/historico.json
+
+          # Si no existe en KV (404) o está vacío, empezamos con []
+          if [ ! -s data/historico.json ]; then
+            echo "⚠️ historico.json vacío/no existe en KV. Inicializando []"
+            echo "[]" > data/historico.json
+          fi
+
+          # Validar que sea JSON lista
+          python - << 'PY'
+          import json
+          p="data/historico.json"
+          with open(p,"r",encoding="utf-8") as f:
+              data=json.load(f)
+          if not isinstance(data, list):
+              raise SystemExit("historico.json no es lista JSON")
+          print("✅ historico.json OK. len =", len(data))
+          if data:
+              print("first =", data[0])
+              print("last  =", data[-1])
+          PY
 
           echo "⬇️ Download last_known_tasas.json from KV..."
-          curl -sS \
+          curl -f -sS \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/last_known_tasas.json" \
             -o data/last_known_tasas.json || true
-          test -s data/last_known_tasas.json || rm -f data/last_known_tasas.json
+
+          if [ ! -s data/last_known_tasas.json ]; then
+            echo "⚠️ last_known_tasas.json vacío/no existe en KV. Inicializando estructura"
+            echo '{"updated_at":null,"casas":{}}' > data/last_known_tasas.json
+          fi
+
+          python - << 'PY'
+          import json
+          p="data/last_known_tasas.json"
+          with open(p,"r",encoding="utf-8") as f:
+              data=json.load(f)
+          if not isinstance(data, dict):
+              raise SystemExit("last_known_tasas.json no es objeto JSON")
+          print("✅ last_known_tasas.json OK.")
+          PY
 
           echo "✅ Files in data/:"
-          ls -lah data || true
+          ls -lah data
 
       # ✅ solo borra lo que se regenera siempre
       - name: Clean previous output
