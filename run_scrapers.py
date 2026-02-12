@@ -23,13 +23,11 @@ from scrapers.defiperu import scrap_defiperu
 from scrapers.dichikash import scrap_dichikash
 from scrapers.dinekash import scrap_dinekash
 from scrapers.dinersfx import scrap_dinersfx
-from scrapers.dlsmoney import scrap_dlsmoney
 from scrapers.dolarex import scrap_dolarex
 from scrapers.dollarhouse import scrap_dollarhouse
 from scrapers.global66 import scrap_global66
 from scrapers.hirpower import scrap_hirpower
 from scrapers.inkamoney import scrap_inkamoney
-from scrapers.instakash import scrap_instakash
 from scrapers.intercambialo import scrap_intercambialo
 from scrapers.inticambio import scrap_inticambio
 from scrapers.jetperu import scrap_jetperu
@@ -81,30 +79,73 @@ def fix_inverted_compra_venta(items):
     return items
 
 
-async def _safe_call(name: str, coro):
+def already_updated_today(path: str, hoy_iso: str) -> bool:
     """
-    Ejecuta un scraper y no tumba el proceso.
-    Retorna dict SIEMPRE.
+    Devuelve True si sunat_mensual.json ya fue generado hoy y tiene dias válidos.
     """
     try:
-        res = await coro
-        if res is None or not isinstance(res, dict):
-            return {"casa": name, "url": None, "compra": None, "venta": None, "scraper_error": "returned_none_or_not_dict"}
+        if not os.path.exists(path):
+            return False
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return (
+            data.get("run_date") == hoy_iso
+            and isinstance(data.get("dias"), list)
+            and len(data["dias"]) > 0
+        )
+    except Exception:
+        return False
 
-        # ✅ si el scraper no mandó casa, la ponemos
-        if not res.get("casa"):
-            res["casa"] = name
 
-        res.setdefault("url", None)
-        return res
+async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 25):
+    """
+    Ejecuta un scraper con límite de concurrencia + timeout.
+    Retorna dict SIEMPRE.
+    """
+    async with sem:
+        try:
+            res = await asyncio.wait_for(coro, timeout=timeout_s)
 
-    except Exception as e:
-        return {"casa": name, "url": None, "compra": None, "venta": None, "scraper_error": str(e)}
+            if res is None or not isinstance(res, dict):
+                return {
+                    "casa": name,
+                    "url": None,
+                    "compra": None,
+                    "venta": None,
+                    "scraper_error": "returned_none_or_not_dict",
+                }
+
+            if not res.get("casa"):
+                res["casa"] = name
+
+            res.setdefault("url", None)
+            return res
+
+        except asyncio.TimeoutError:
+            return {
+                "casa": name,
+                "url": None,
+                "compra": None,
+                "venta": None,
+                "scraper_error": f"timeout_{timeout_s}s",
+            }
+
+        except Exception as e:
+            return {
+                "casa": name,
+                "url": None,
+                "compra": None,
+                "venta": None,
+                "scraper_error": str(e),
+            }
 
 
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
     hoy_lima = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
+
+    # ✅ Concurrencia (ajusta 10–25 según estabilidad)
+    sem = asyncio.Semaphore(15)
 
     # ---- Lista de scrapers (SIN SUNAT en tasas) ----
     tasks = [
@@ -125,13 +166,11 @@ async def main():
         ("dichikash", scrap_dichikash()),
         ("dinekash", scrap_dinekash()),
         ("dinersfx", scrap_dinersfx()),
-        # ("dlsmoney", scrap_dlsmoney()),
         ("dolarex", scrap_dolarex()),
         ("dollarhouse", scrap_dollarhouse()),
         ("global66", scrap_global66()),
         ("hirpower", scrap_hirpower()),
         ("inkamoney", scrap_inkamoney()),
-        # ("instakash", scrap_instakash()),
         ("intercambialo", scrap_intercambialo()),
         ("inticambio", scrap_inticambio()),
         ("jetperu", scrap_jetperu()),
@@ -163,22 +202,20 @@ async def main():
         ("zonadolar", scrap_zonadolar()),
     ]
 
-    resultados = []
-    for name, coro in tasks:
-        resultados.append(await _safe_call(name, coro))
+    # ✅ Ejecutar en paralelo
+    coros = [_safe_call(name, coro, sem, timeout_s=25) for name, coro in tasks]
+    resultados = await asyncio.gather(*coros)
 
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
     # source = scraper si válido, missing si no
     for r in resultados:
-        if is_valid_rate(r):
-            r["source"] = "scraper"
-        else:
-            r["source"] = "missing"
+        r["source"] = "scraper" if is_valid_rate(r) else "missing"
 
     resultados = fix_inverted_compra_venta(resultados)
 
     os.makedirs("data", exist_ok=True)
+
     with open("data/tasas.json", "w", encoding="utf-8") as f:
         json.dump(resultados, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
@@ -204,28 +241,33 @@ async def main():
 
     # ===============================
     # ✅ SUNAT MENSUAL (separado)
-    # Siempre crea data/sunat_mensual.json (aunque falle)
+    # Solo 1 vez al día
     # ===============================
-    sunat_mensual = await _safe_call("sunat_mensual", scrap_sunat())
+
     out_path = "data/sunat_mensual.json"
 
-    if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
-        payload = {**sunat_mensual, "run_date": hoy_lima, "run_at_utc": run_at}
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"✅ SUNAT mensual guardado en {out_path} (dias={len(sunat_mensual['dias'])})")
+    if already_updated_today(out_path, hoy_lima):
+        print("✅ SUNAT mensual ya fue actualizado hoy. Skipping.")
     else:
-        payload = {
-            "casa": "SUNAT",
-            "run_date": hoy_lima,
-            "run_at_utc": run_at,
-            "dias": [],
-            "error": (sunat_mensual.get("scraper_error") if isinstance(sunat_mensual, dict) else "unknown"),
-        }
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"⚠️ SUNAT mensual FALLÓ. Se guardó {out_path} con error para no romper el workflow.")
+        # SUNAT puede ser más lento: timeout mayor
+        sunat_mensual = await _safe_call("sunat_mensual", scrap_sunat(), sem, timeout_s=90)
 
+        if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
+            payload = {**sunat_mensual, "run_date": hoy_lima, "run_at_utc": run_at}
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            print(f"✅ SUNAT mensual guardado en {out_path} (dias={len(sunat_mensual['dias'])})")
+        else:
+            payload = {
+                "casa": "SUNAT",
+                "run_date": hoy_lima,
+                "run_at_utc": run_at,
+                "dias": [],
+                "error": (sunat_mensual.get("scraper_error") if isinstance(sunat_mensual, dict) else "unknown"),
+            }
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            print(f"⚠️ SUNAT mensual FALLÓ. Se guardó {out_path} con error para no romper el workflow.")
 
 if __name__ == "__main__":
     asyncio.run(main())
