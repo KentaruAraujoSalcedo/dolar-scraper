@@ -6,3 +6,4 @@ lxml
 pytz
 python-dateutil
 playwright
+httpx
