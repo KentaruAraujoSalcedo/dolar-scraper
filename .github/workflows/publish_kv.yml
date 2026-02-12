@@ -46,14 +46,23 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
         run: |
+          mkdir -p data
+        
           curl -sS \
             "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/sunat_mensual.json" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -o data/sunat_mensual.json || true
 
-          # Si bajó vacío, lo eliminamos para no confundir al script
+          # borrar si está vacío
           if [ ! -s data/sunat_mensual.json ]; then
-            rm -f data/sunat_mensual.json || true
+          rm -f data/sunat_mensual.json || true
+          exit 0
+          fi
+
+          # borrar si no parece JSON
+          first_char=$(head -c 1 data/sunat_mensual.json || true)
+          if [ "$first_char" != "{" ] && [ "$first_char" != "[" ]; then
+          rm -f data/sunat_mensual.json || true
           fi
 
       - name: Run scrapers
