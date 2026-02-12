@@ -31,10 +31,30 @@ jobs:
           python -m playwright --version
           python -m playwright install --with-deps chromium
 
-      # ✅ Solo borra lo que se regenera siempre
+      # ✅ Solo borra lo que siempre se regenera en cada run
       - name: Clean previous output
         run: |
-          rm -f data/tasas.json data/meta.json data/sunat_mensual.json || true
+          rm -f data/tasas.json data/meta.json || true
+          mkdir -p data
+
+      # ✅ IMPORTANTÍSIMO:
+      # El runner es nuevo cada vez, así que bajamos el sunat_mensual.json actual desde KV.
+      # Esto permite que run_scrapers.py detecte "ya se corrió hoy" y haga SKIP.
+      - name: Download existing sunat_mensual.json from Cloudflare KV (if any)
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          curl -sS \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/sunat_mensual.json" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -o data/sunat_mensual.json || true
+
+          # Si bajó vacío, lo eliminamos para no confundir al script
+          if [ ! -s data/sunat_mensual.json ]; then
+            rm -f data/sunat_mensual.json || true
+          fi
 
       - name: Run scrapers
         run: |
