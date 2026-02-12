@@ -1,10 +1,4 @@
-fastapi
-uvicorn
-requests
-beautifulsoup4
-lxml
-pytz
-python-dateutil
-playwright
 httpx
+playwright
+beautifulsoup4
 cloudscraper
