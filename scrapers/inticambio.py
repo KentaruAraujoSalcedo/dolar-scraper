@@ -94,7 +94,6 @@ async def scrap_inticambio():
                 headers=headers,
                 timeout=20,
                 follow_redirects=True,
-                http2=True,
             ) as client:
                 r = await client.get(url)
 
