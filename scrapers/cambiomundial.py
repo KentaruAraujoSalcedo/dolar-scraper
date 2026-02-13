@@ -41,6 +41,9 @@ def _parse_rates(html: str):
 # -------------------------
 # Playwright fallback
 # -------------------------
+def _snippet(s: str, n=600) -> str:
+    return (s or "").replace("\r", "").replace("\n", " ")[:n]
+
 async def _fetch_html_playwright(target_url: str) -> str:
     from playwright.async_api import async_playwright
 
@@ -49,26 +52,34 @@ async def _fetch_html_playwright(target_url: str) -> str:
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-
         context = await browser.new_context(
             locale="es-PE",
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         )
-
         page = await context.new_page()
 
-        # Más estable que networkidle
+        # 1) entrar al home para sembrar cookies
+        await page.goto("https://www.cambiomundial.com/", wait_until="domcontentloaded", timeout=45000)
+
+        # 2) ir al endpoint real
         await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 
-        # Pequeña pausa para que renderice
-        await page.wait_for_timeout(1200)
+        # 3) esperar explícitamente a los elementos (clave)
+        try:
+            await page.wait_for_selector(
+                "label#lblValorCompra, input#txtValorCompra",
+                timeout=20000
+            )
+        except Exception:
+            # igual devolvemos el HTML para debug
+            html = await page.content()
+            await browser.close()
+            raise RuntimeError(f"Playwright: no apareció selector de compra. snip={_snippet(html)}")
 
         html = await page.content()
-
         await browser.close()
         return html
-
 
 # -------------------------
 # Scraper principal
@@ -145,7 +156,7 @@ async def scrap_cambiomundial():
             "venta": None,
             "estado": "error",
             "source": "playwright",
-            "error": "No se pudieron extraer IDs lblValorCompra/lblValorVenta",
+            "error": f"No se pudieron extraer IDs lblValorCompra/lblValorVenta. snip={_snippet(html2)}",
         }
 
     except Exception as e:
