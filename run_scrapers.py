@@ -208,9 +208,19 @@ async def main():
 
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
-    # source = scraper si válido, missing si no
+    # source/estado: conserva diagnóstico del scraper
     for r in resultados:
-        r["source"] = "scraper" if is_valid_rate(r) else "missing"
+        valid = is_valid_rate(r)
+
+        # si el scraper ya definió source (ej: httpx/playwright), respétalo
+        if "source" not in r:
+            r["source"] = "scraper" if valid else "missing"
+
+        # si no es válido, marca error sin borrar info
+        if not valid:
+            r.setdefault("estado", "error")
+            # prioriza error propio, luego scraper_error de _safe_call, sino genérico
+            r.setdefault("error", r.get("scraper_error") or "missing compra/venta")
 
     resultados = fix_inverted_compra_venta(resultados)
 
@@ -222,8 +232,13 @@ async def main():
 
     ok = [r["casa"] for r in resultados if r.get("source") == "scraper"]
     ms = [r["casa"] for r in resultados if r.get("source") == "missing"]
-    fails = [{"casa": r.get("casa"), "error": r.get("scraper_error")} for r in resultados if r.get("scraper_error")]
 
+    fails = [
+        {"casa": r.get("casa"), "error": (r.get("scraper_error") or r.get("error"))}
+        for r in resultados
+        if (r.get("scraper_error") or r.get("error") or r.get("estado") == "error")
+    ]
+    
     meta = {
         "run_at_utc": run_at,
         "run_date": hoy_lima,
