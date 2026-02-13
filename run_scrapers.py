@@ -80,7 +80,6 @@ def _is_number(x):
 def is_valid_rate(item: dict) -> bool:
     return _is_number(item.get("compra")) and _is_number(item.get("venta"))
 
-
 def fix_inverted_compra_venta(item: dict) -> dict:
     c = item.get("compra")
     v = item.get("venta")
@@ -92,12 +91,10 @@ def fix_inverted_compra_venta(item: dict) -> dict:
 
 def validate_and_tag_to_source(item: dict) -> dict:
     """
-    ✅ Opción A: SOLO usamos `source` como clasificación final:
-      - source: scraper / regular / outlier / missing / blocked
-    Nota: NO dependemos de `estado` para nada.
+    source final: scraper / regular / outlier / missing / blocked
     """
 
-    # Respeta blocked SIEMPRE (aunque no tenga compra/venta)
+    # ✅ Respeta blocked SIEMPRE (aunque no tenga compra/venta)
     if (
         item.get("source") == "blocked"
         or str(item.get("error_type", "")).startswith("blocked")
@@ -159,7 +156,6 @@ def validate_and_tag_to_source(item: dict) -> dict:
     item.pop("error", None)
     return item
 
-
 def classify_error(err: str) -> str:
     if not err:
         return "unknown"
@@ -170,7 +166,7 @@ def classify_error(err: str) -> str:
         return "timeout"
     if "403" in e or "forbidden" in e:
         return "blocked_403"
-    if "cloudflare" in e or "cf" in e:
+    if "cloudflare" in e or "cf-ray" in e or "challenge" in e or "un momento" in e:
         return "blocked_cloudflare"
     if "captcha" in e:
         return "blocked_captcha"
@@ -180,7 +176,6 @@ def classify_error(err: str) -> str:
         return "parse_error"
 
     return "error"
-
 
 def already_updated_today(path: str, hoy_iso: str) -> bool:
     try:
@@ -344,28 +339,24 @@ async def main():
 
     final = []
     for r in resultados:
-        # 1) Si fue un error/bloqueo detectado por excepción, tradúcelo a blocked si aplica
-        #    (Ej: 403, cloudflare, captcha)
-        if str(r.get("error_type", "")).startswith("blocked"):
-            r["source"] = "blocked"
-
-        # 2) Clasificación FINAL SOLO POR source (scraper/regular/outlier/missing/blocked)
+        # 1) Clasificación FINAL (scraper/regular/outlier/missing/blocked)
         r = validate_and_tag_to_source(r)
 
-        # 3) Si quedó missing y no tiene error_type, clasifica por mensaje (útil para meta)
+        # 2) Si quedó missing y no tiene error_type, clasifica por mensaje (útil para meta)
+        if r.get("source") == "blocked" and not r.get("error_type"):
+            r["error_type"] = classify_error(r.get("error") or "blocked")
+
         if r.get("source") == "missing" and not r.get("error_type"):
             r["error_type"] = classify_error(r.get("error") or "")
 
-        # 4) Normaliza (por si algún scraper deja cosas raras)
+        # 3) Normaliza source raro
         if r.get("source") not in ("scraper", "regular", "outlier", "missing", "blocked"):
             if _is_number(r.get("compra")) and _is_number(r.get("venta")):
                 r["source"] = "scraper"
             else:
                 r["source"] = "missing"
 
-        # 5) Opcional: limpia campo estado si quedó por ahí (ya NO lo usamos)
         r.pop("estado", None)
-
         final.append(r)
 
     os.makedirs("data", exist_ok=True)
