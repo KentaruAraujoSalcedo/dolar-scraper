@@ -1,6 +1,24 @@
 import httpx
 from scrapers.utils import normalize_rate
 
+def _extract_rates(data):
+    rates = []
+    if isinstance(data, list):
+        for block in data:
+            if not isinstance(block, dict):
+                continue
+            for o in block.get("successfulOrders", []) or []:
+                if not isinstance(o, dict):
+                    continue
+                x = o.get("typeExchangeAmount")
+                try:
+                    p = float(x)
+                except Exception:
+                    continue
+                if 2.8 <= p <= 4.2:
+                    rates.append(p)
+    return rates
+
 async def scrap_mercadocambiario():
     casa = "MercadoCambiario"
     url = "https://www.mercadocambiario.pe/"
@@ -19,68 +37,91 @@ async def scrap_mercadocambiario():
         "X-Requested-With": "XMLHttpRequest",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
     }
 
+    # --- 1) intento httpx (rápido) ---
     try:
         async with httpx.AsyncClient(headers=headers, timeout=25, follow_redirects=True) as client:
-            # warmup cookies (ayuda con 403 intermitente)
-            await client.get(url)
-
+            await client.get(url)  # warmup cookies
             r = await client.post(endpoint, json={})
+
+            # si es 403, pasamos a fallback sin romper todo el run
+            if r.status_code == 403:
+                raise RuntimeError("blocked_403_httpx")
+
             r.raise_for_status()
             data = r.json()
 
-        rates = []
-        if isinstance(data, list):
-            for block in data:
-                if not isinstance(block, dict):
-                    continue
-                for o in block.get("successfulOrders", []) or []:
-                    if not isinstance(o, dict):
-                        continue
-                    x = o.get("typeExchangeAmount")
-                    try:
-                        p = float(x)
-                    except Exception:
-                        continue
-                    # rango realista PEN/USD
-                    if 2.8 <= p <= 4.2:
-                        rates.append(p)
-
+        rates = _extract_rates(data)
         if not rates:
             return {
-                "casa": casa,
-                "url": url,
-                "compra": None,
-                "venta": None,
+                "casa": casa, "url": url,
+                "compra": None, "venta": None,
                 "estado": "error",
-                "source": "actives-all_minmax",
-                "error": "No se encontraron rates válidos en successfulOrders.",
+                "error": "No rates válidos (httpx).",
+                "source": "actives-all_httpx",
             }
 
-        # ✅ Lo que muestra la web:
-        venta_raw = min(rates)   # mejor tasa para vender USD (más baja)
-        compra_raw = max(rates)  # mejor tasa para comprar USD (más alta)
-
-        compra = normalize_rate(str(compra_raw))
-        venta  = normalize_rate(str(venta_raw))
+        venta_raw = min(rates)
+        compra_raw = max(rates)
 
         return {
             "casa": casa,
             "url": url,
-            "compra": compra,
-            "venta": venta,
+            "compra": normalize_rate(str(compra_raw)),
+            "venta": normalize_rate(str(venta_raw)),
             "estado": "abierto",
-            "source": "actives-all_successfulOrders_minmax",
+            "source": "actives-all_httpx_minmax",
             "n_rates": len(rates),
         }
 
-    except Exception as e:
-        return {
-            "casa": casa,
-            "url": url,
-            "compra": None,
-            "venta": None,
-            "estado": "error",
-            "error": f"No se pudo scrapear: {e}",
-        }
+    except Exception as e_httpx:
+        # --- 2) fallback curl-cffi (mejor fingerprint TLS / pasa datacenter) ---
+        try:
+            from curl_cffi import requests as creq
+
+            creq.get(url, headers=headers, impersonate="chrome120", timeout=25)
+            rr = creq.post(endpoint, headers=headers, json={}, impersonate="chrome120", timeout=25)
+
+            if rr.status_code >= 400:
+                return {
+                    "casa": casa, "url": url,
+                    "compra": None, "venta": None,
+                    "estado": "error",
+                    "error": f"blocked_status={rr.status_code} (curl_cffi). snip={rr.text[:200]}",
+                    "source": "actives-all_curlcffi",
+                }
+
+            data = rr.json()
+            rates = _extract_rates(data)
+            if not rates:
+                return {
+                    "casa": casa, "url": url,
+                    "compra": None, "venta": None,
+                    "estado": "error",
+                    "error": "No rates válidos (curl_cffi).",
+                    "source": "actives-all_curlcffi",
+                }
+
+            venta_raw = min(rates)
+            compra_raw = max(rates)
+
+            return {
+                "casa": casa,
+                "url": url,
+                "compra": normalize_rate(str(compra_raw)),
+                "venta": normalize_rate(str(venta_raw)),
+                "estado": "abierto",
+                "source": "actives-all_curlcffi_minmax",
+                "n_rates": len(rates),
+            }
+
+        except Exception as e2:
+            return {
+                "casa": casa, "url": url,
+                "compra": None, "venta": None,
+                "estado": "error",
+                "error": f"httpx_fail={e_httpx} | curl_cffi_fail={e2}",
+            }
