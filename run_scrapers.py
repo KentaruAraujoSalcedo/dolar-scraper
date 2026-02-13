@@ -154,7 +154,7 @@ async def main():
         ("cambiafx", scrap_cambiafx()),
         ("cambiodigitalperu", scrap_cambiodigitalperu()),
         ("cambiomas", scrap_cambiomas()),
-        ("cambiomundial", scrap_cambiomundial()),
+        ("cambiomundial", scrap_cambiomundial(), 45),
         ("cambioseguro", scrap_cambioseguro()),
         ("cambioselgordito", scrap_cambioselgordito()),
         ("cambiosol", scrap_cambiosol()),
@@ -203,7 +203,15 @@ async def main():
     ]
 
     # ✅ Ejecutar en paralelo
-    coros = [_safe_call(name, coro, sem, timeout_s=25) for name, coro in tasks]
+    coros = []
+    for item in tasks:
+        if len(item) == 3:
+            name, coro, timeout_s = item
+        else:
+            name, coro = item
+            timeout_s = 25
+        coros.append(_safe_call(name, coro, sem, timeout_s=timeout_s))
+    
     resultados = await asyncio.gather(*coros)
 
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
