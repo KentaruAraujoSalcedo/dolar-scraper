@@ -1,36 +1,59 @@
+import os
 import re
+from datetime import datetime
+
 import httpx
 from scrapers.utils import normalize_rate
 
-RATE_RE = re.compile(r"\b\d[.,]\d{3,4}\b")
+# acepta 2-4 decimales: 3.34 / 3.363 / 3.345 / 3,35
+RATE_RE = re.compile(r"\b\d[.,]\d{2,4}\b", re.I)
 
-def _to_float_str(s: str) -> str:
-    return re.sub(r"[^\d.,]", "", (s or "")).replace(",", ".").strip()
+# Busca número cerca de "Compra" y "Venta"
+BUY_CTX_RE  = re.compile(r"compra[^0-9]{0,80}(\d[.,]\d{2,4})", re.I | re.S)
+SELL_CTX_RE = re.compile(r"venta[^0-9]{0,80}(\d[.,]\d{2,4})", re.I | re.S)
 
-def _extract_rates_from_insert_html(payload) -> tuple[float | None, float | None]:
-    """
-    payload: lista drupal_ajax con comandos.
-    buscamos command=insert y dentro 'data' extraemos tasas.
-    """
-    insert_html = None
-    if isinstance(payload, list):
-        for item in payload:
-            if isinstance(item, dict) and item.get("command") == "insert":
-                insert_html = item.get("data") or ""
-                break
+def _to_float(s: str):
+    s = re.sub(r"[^\d.,]", "", (s or "")).strip()
+    s = s.replace(",", ".")
+    try:
+        return float(s)
+    except Exception:
+        return None
 
-    if not insert_html:
-        return None, None
+def _dump_debug(name: str, content: str) -> str:
+    os.makedirs("debug_html", exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    path = f"debug_html/{name.lower()}_{ts}.html"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content or "")
+    return path
 
-    # Extrae tasas razonables del HTML insertado
+def _extract_buy_sell_from_html_by_context(html: str):
+    h = html or ""
+
+    mb = BUY_CTX_RE.search(h)
+    ms = SELL_CTX_RE.search(h)
+
+    buy  = _to_float(mb.group(1)) if mb else None
+    sell = _to_float(ms.group(1)) if ms else None
+
+    if buy is not None and sell is not None:
+        b, s = (buy, sell) if buy <= sell else (sell, buy)
+        # spread razonable
+        if (s - b) <= 0.30 and (2.8 <= b <= 4.2) and (2.8 <= s <= 4.2):
+            return b, s
+
+    return None, None
+
+def _extract_buy_sell_fallback_numbers(html: str):
+    """Plan B: si no hay Compra/Venta claro, agarra dos números en rango PEN/USD."""
     nums = []
-    for m in RATE_RE.finditer(insert_html):
-        raw = m.group(0)
-        try:
-            x = float(_to_float_str(raw))
-        except Exception:
+    for m in RATE_RE.finditer(html or ""):
+        x = _to_float(m.group(0))
+        if x is None:
             continue
-        if 2.5 <= x <= 5.5:
+        # rango realista para PEN/USD
+        if 2.8 <= x <= 4.2:
             nums.append(x)
 
     # dedupe manteniendo orden
@@ -40,16 +63,38 @@ def _extract_rates_from_insert_html(payload) -> tuple[float | None, float | None
             uniq.append(x)
 
     if len(uniq) >= 2:
-        buy, sell = (uniq[0], uniq[1]) if uniq[0] <= uniq[1] else (uniq[1], uniq[0])
-        return buy, sell
+        b, s = (uniq[0], uniq[1]) if uniq[0] <= uniq[1] else (uniq[1], uniq[0])
+        if (s - b) <= 0.30:
+            return b, s
 
     return None, None
+
+def _extract_rates_from_drupal_payload(payload):
+    """payload: lista drupal_ajax con comandos insert. Extrae insert_html y parsea."""
+    insert_html = None
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict) and item.get("command") == "insert":
+                insert_html = item.get("data") or ""
+                break
+
+    if not insert_html:
+        return None, None, None  # buy, sell, insert_html
+
+    # 1) intento por contexto Compra/Venta (lo más confiable)
+    buy, sell = _extract_buy_sell_from_html_by_context(insert_html)
+    if buy is not None and sell is not None:
+        return buy, sell, insert_html
+
+    # 2) fallback por números en rango
+    buy, sell = _extract_buy_sell_fallback_numbers(insert_html)
+    return buy, sell, insert_html
+
 
 async def scrap_misterdollar():
     casa = "MisterDollar"
     url = "https://misterdollar.pe/"
 
-    # endpoint Drupal Views AJAX (el que encontraste)
     endpoint = "https://misterdollar.pe/views/ajax"
     params = {
         "_wrapper_format": "drupal_ajax",
@@ -58,64 +103,99 @@ async def scrap_misterdollar():
         "view_args": "",
         "view_path": "/front",
         "view_base_path": "",
-        # view_dom_id cambia por sesión/página. PERO muchas veces NO es obligatorio.
-        # Si fallara, lo sacamos primero del HTML principal. (Te dejo fallback abajo)
         "pager_element": "0",
         "_drupal_ajax": "1",
         "ajax_page_state[theme]": "tema",
         "ajax_page_state[theme_token]": "",
-        # libraries puede cambiar; normalmente no es obligatorio para la respuesta del view.
-        # Lo omitimos a propósito.
     }
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
         "Accept-Language": "es-PE,es;q=0.9,en;q=0.8",
         "Accept": "application/json, text/plain, */*",
         "Referer": url,
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     }
 
     try:
         async with httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True) as client:
             r = await client.get(endpoint, params=params)
-            # Si el endpoint exige algún param, aquí podría dar 4xx, lo manejamos:
-            if r.status_code >= 400:
-                # fallback: intenta solo HTML principal (tu debug_analyze ya dijo que trae tasas)
+
+            buy = sell = None
+            insert_html = None
+
+            if r.status_code < 400:
+                payload = r.json()
+                buy, sell, insert_html = _extract_rates_from_drupal_payload(payload)
+
+            # Si AJAX falló o no pudo parsear, intenta home HTML
+            if buy is None or sell is None:
                 home = await client.get(url)
                 home.raise_for_status()
                 html = home.text or ""
-                # extrae por repetición (simple)
-                matches = [float(_to_float_str(m.group(0))) for m in RATE_RE.finditer(html)
-                           if 2.5 <= float(_to_float_str(m.group(0))) <= 5.5]
-                uniq = []
-                for x in matches:
-                    if x not in uniq:
-                        uniq.append(x)
-                buy = uniq[0] if len(uniq) > 0 else None
-                sell = uniq[1] if len(uniq) > 1 else None
-            else:
-                payload = r.json()
-                buy, sell = _extract_rates_from_insert_html(payload)
 
-        compra = normalize_rate(str(buy)) if buy is not None else None
-        venta  = normalize_rate(str(sell)) if sell is not None else None
+                buy2, sell2 = _extract_buy_sell_from_html_by_context(html)
+                if buy2 is None or sell2 is None:
+                    buy2, sell2 = _extract_buy_sell_fallback_numbers(html)
 
-        cerrado = (compra is None and venta is None) or (compra == 0.0 and venta == 0.0)
+                buy, sell = buy2, sell2
 
-        out = {
-            "casa": casa,
-            "url": url,
-            "compra": compra,
-            "venta": venta,
-            "estado": "cerrado" if cerrado else "abierto",
-        }
+                if buy is None or sell is None:
+                    path = _dump_debug("misterdollar_home", html)
+                    return {
+                        "casa": casa,
+                        "url": url,
+                        "compra": None,
+                        "venta": None,
+                        "estado": "error",
+                        "error": f"No se pudo identificar compra/venta en HOME. Debug: {path}",
+                    }
 
-        if compra is None or venta is None:
-            out["estado"] = "error"
-            out["error"] = "No se pudo identificar compra/venta (Drupal AJAX cambió o faltan params)."
+            compra = normalize_rate(str(buy)) if buy is not None else None
+            venta  = normalize_rate(str(sell)) if sell is not None else None
 
-        return out
+            # Si sigue raro, dump del insert_html para inspección
+            if (compra is None or venta is None) and insert_html:
+                path = _dump_debug("misterdollar_insert", insert_html)
+                return {
+                    "casa": casa,
+                    "url": url,
+                    "compra": compra,
+                    "venta": venta,
+                    "estado": "error",
+                    "error": f"No se pudo identificar compra/venta en INSERT. Debug: {path}",
+                }
+
+            # guardrails finales (evita outliers)
+            if compra is not None and venta is not None:
+                if not (3.0 <= compra <= 3.7 and 3.0 <= venta <= 3.7 and venta >= compra):
+                    # dump para revisar por qué salió raro
+                    if insert_html:
+                        path = _dump_debug("misterdollar_outlier_insert", insert_html)
+                    else:
+                        path = "N/A"
+                    return {
+                        "casa": casa,
+                        "url": url,
+                        "compra": None,
+                        "venta": None,
+                        "estado": "error",
+                        "error": f"Outlier detectado compra={compra} venta={venta}. Debug: {path}",
+                    }
+
+            cerrado = (compra is None and venta is None) or (compra == 0.0 and venta == 0.0)
+
+            return {
+                "casa": casa,
+                "url": url,
+                "compra": compra,
+                "venta": venta,
+                "estado": "cerrado" if cerrado else "abierto",
+            }
 
     except Exception as e:
         return {
