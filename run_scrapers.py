@@ -2,6 +2,8 @@
 import asyncio
 import json
 import os
+import time
+import traceback
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -50,7 +52,7 @@ from scrapers.safex import scrap_safex
 from scrapers.securex import scrap_securex
 from scrapers.smartdollar import scrap_smartdollar
 from scrapers.srcambio import scrap_srcambio
-from scrapers.sunat import scrap_sunat  # ✅ SOLO para sunat_mensual.json (no va a tasas)
+from scrapers.sunat import scrap_sunat  # ✅ SOLO sunat_mensual.json
 from scrapers.tkambio import scrap_tkambio
 from scrapers.tucambista import scrap_tucambista
 from scrapers.vipcapitalbusiness import scrap_vipcapitalbusiness
@@ -60,23 +62,114 @@ from scrapers.yanki import scrap_yanki
 from scrapers.zonadolar import scrap_zonadolar
 
 
+# ----------------------------
+# Config de sanidad / outliers
+# ----------------------------
+MIN_RATE = 3.00
+MAX_RATE = 3.60
+MAX_SPREAD = 0.05  # ajusta: 0.05 es estricto y te limpia outliers feos
+
+
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
 def is_valid_rate(item: dict) -> bool:
     try:
-        return item.get("compra") is not None and item.get("venta") is not None
+        return _is_number(item.get("compra")) and _is_number(item.get("venta"))
     except Exception:
         return False
 
 
-def fix_inverted_compra_venta(items):
-    for r in items:
-        if not isinstance(r, dict):
-            continue
-        c = r.get("compra")
-        v = r.get("venta")
-        if isinstance(c, (int, float)) and isinstance(v, (int, float)) and c > v:
-            r["compra"], r["venta"] = v, c
-            r["swapped"] = True
-    return items
+def fix_inverted_compra_venta(item: dict) -> dict:
+    c = item.get("compra")
+    v = item.get("venta")
+    if _is_number(c) and _is_number(v) and c > v:
+        item["compra"], item["venta"] = v, c
+        item["swapped"] = True
+    return item
+
+
+def validate_and_tag(item: dict) -> dict:
+    """
+    Aplica reglas de sanidad y etiqueta:
+    - estado: ok / error / outlier / bloqueado
+    - source: scraper / missing / outlier / blocked
+    """
+    c = item.get("compra")
+    v = item.get("venta")
+
+    if not is_valid_rate(item):
+        item.setdefault("estado", "error")
+        item.setdefault("source", "missing")
+        item.setdefault("error", item.get("error") or "missing compra/venta")
+        return item
+
+    # Normaliza invertido si aplica
+    item = fix_inverted_compra_venta(item)
+    c = item.get("compra")
+    v = item.get("venta")
+
+    # Reglas de rango
+    if not (MIN_RATE <= c <= MAX_RATE) or not (MIN_RATE <= v <= MAX_RATE):
+        item["estado"] = "outlier"
+        item["source"] = "outlier"
+        item["error"] = f"outlier_range compra={c} venta={v} (expected {MIN_RATE}-{MAX_RATE})"
+        # Si quieres ocultarlo del front, lo puedes nullear:
+        item["compra"] = None
+        item["venta"] = None
+        return item
+
+    # Spread máximo
+    spread = v - c
+    item["spread"] = round(spread, 6)
+    if spread < 0:
+        # ya debió corregirse con swapped, pero por si acaso
+        item["estado"] = "error"
+        item["source"] = "missing"
+        item["error"] = f"negative_spread compra={c} venta={v}"
+        item["compra"] = None
+        item["venta"] = None
+        return item
+
+    if spread > MAX_SPREAD:
+        item["estado"] = "outlier"
+        item["source"] = "outlier"
+        item["error"] = f"outlier_spread spread={spread:.6f} (max {MAX_SPREAD}) compra={c} venta={v}"
+        item["compra"] = None
+        item["venta"] = None
+        return item
+
+    item.setdefault("estado", "ok")
+    item.setdefault("source", "scraper")
+    return item
+
+
+def classify_error(err: str) -> str:
+    """
+    Clasifica en categorías útiles para tu meta.
+    """
+    if not err:
+        return "unknown"
+
+    e = err.lower()
+
+    if "timeout" in e:
+        return "timeout"
+
+    # Bloqueos típicos
+    if "403" in e or "forbidden" in e:
+        return "blocked_403"
+    if "cloudflare" in e or "cf" in e:
+        return "blocked_cloudflare"
+    if "captcha" in e:
+        return "blocked_captcha"
+
+    # Parse/selector
+    if "no se pudieron identificar" in e or "no se pudo identificar" in e or "parse" in e:
+        return "parse_error"
+
+    return "error"
 
 
 def already_updated_today(path: str, hoy_iso: str) -> bool:
@@ -100,11 +193,13 @@ def already_updated_today(path: str, hoy_iso: str) -> bool:
 async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 25):
     """
     Ejecuta un scraper con límite de concurrencia + timeout.
-    Retorna dict SIEMPRE.
+    Retorna dict SIEMPRE, con diagnóstico.
     """
     async with sem:
+        t0 = time.perf_counter()
         try:
             res = await asyncio.wait_for(coro, timeout=timeout_s)
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
             if res is None or not isinstance(res, dict):
                 return {
@@ -112,31 +207,68 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
                     "url": None,
                     "compra": None,
                     "venta": None,
-                    "scraper_error": "returned_none_or_not_dict",
+                    "estado": "error",
+                    "source": "missing",
+                    "elapsed_ms": elapsed_ms,
+                    "error": "returned_none_or_not_dict",
+                    "error_type": "returned_none_or_not_dict",
                 }
 
             if not res.get("casa"):
                 res["casa"] = name
 
             res.setdefault("url", None)
+            res["elapsed_ms"] = elapsed_ms
             return res
 
         except asyncio.TimeoutError:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
             return {
                 "casa": name,
                 "url": None,
                 "compra": None,
                 "venta": None,
-                "scraper_error": f"timeout_{timeout_s}s",
+                "estado": "error",
+                "source": "missing",
+                "elapsed_ms": elapsed_ms,
+                "error": f"timeout_{timeout_s}s",
+                "error_type": "timeout",
             }
 
         except Exception as e:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+            # intenta extraer status_code si viene en excepciones de httpx/requests
+            status_code = None
+            try:
+                # httpx.HTTPStatusError tiene .response.status_code
+                if hasattr(e, "response") and getattr(e, "response") is not None:
+                    status_code = getattr(getattr(e, "response"), "status_code", None)
+                # requests.exceptions.HTTPError a veces tiene .response.status_code
+                if status_code is None and hasattr(e, "args"):
+                    pass
+            except Exception:
+                status_code = None
+
+            tb_lines = traceback.format_exc().splitlines()
+
+            err_msg = str(e) or "exception_no_message"
+            err_type = classify_error(err_msg)
+
             return {
                 "casa": name,
                 "url": None,
                 "compra": None,
                 "venta": None,
-                "scraper_error": str(e),
+                "estado": "error",
+                "source": "missing",
+                "elapsed_ms": elapsed_ms,
+                "error": err_msg,
+                "error_type": err_type,
+                "exception_type": type(e).__name__,
+                "exception_message": err_msg,
+                "status_code": status_code,
+                "traceback_last_lines": tb_lines[-8:],
             }
 
 
@@ -144,65 +276,62 @@ async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
     hoy_lima = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
 
-    # ✅ Concurrencia (ajusta 10–25 según estabilidad)
     sem = asyncio.Semaphore(15)
 
-    # ---- Lista de scrapers (SIN SUNAT en tasas) ----
     tasks = [
-        ("acomo", scrap_acomo()),
-        ("billex", scrap_billex()),
-        ("cambiafx", scrap_cambiafx()),
-        ("cambiodigitalperu", scrap_cambiodigitalperu()),
-        ("cambiomas", scrap_cambiomas()),
-        ("cambiomundial", scrap_cambiomundial(), 80),
-        ("cambioseguro", scrap_cambioseguro()),
-        ("cambioselgordito", scrap_cambioselgordito()),
-        ("cambiosol", scrap_cambiosol()),
-        ("cambiox", scrap_cambiox()),
-        ("cambix", scrap_cambix()),
-        ("chapacambio", scrap_chapacambio()),
-        ("chaskidolar", scrap_chaskidolar()),
-        ("defiperu", scrap_defiperu()),
-        ("dichikash", scrap_dichikash()),
-        ("dinekash", scrap_dinekash()),
-        ("dinersfx", scrap_dinersfx()),
-        ("dolarex", scrap_dolarex()),
-        ("dollarhouse", scrap_dollarhouse()),
-        ("global66", scrap_global66()),
-        ("hirpower", scrap_hirpower()),
-        ("inkamoney", scrap_inkamoney()),
-        ("intercambialo", scrap_intercambialo()),
-        ("inticambio", scrap_inticambio()),
-        ("jetperu", scrap_jetperu()),
-        ("kallpacambios", scrap_kallpacambios()),
-        ("kambio", scrap_kambio()),
-        ("kambista", scrap_kambista()),
-        ("marketdollar", scrap_marketdollar()),
-        ("megamoney", scrap_megamoney()),
-        ("mercadocambiario", scrap_mercadocambiario()),
-        ("midpointfx", scrap_midpointfx()),
-        ("misterdollar", scrap_misterdollar()),
-        ("moneyhouse", scrap_moneyhouse()),
-        ("moneyplus", scrap_moneyplus()),
-        ("okane", scrap_okane()),
-        ("perudolar", scrap_perudolar()),
-        ("rextie", scrap_rextie()),
-        ("rissanpe", scrap_rissanpe()),
-        ("roblex", scrap_roblex()),
-        ("safex", scrap_safex()),
-        ("securex", scrap_securex()),
-        ("smartdollar", scrap_smartdollar()),
-        ("srcambio", scrap_srcambio()),
-        ("tkambio", scrap_tkambio()),
-        ("tucambista", scrap_tucambista()),
-        ("vipcapitalbusiness", scrap_vipcapitalbusiness()),
-        ("westernunion", scrap_westernunion()),
-        ("x_cambio", scrap_x_cambio()),
-        ("yanki", scrap_yanki()),
-        ("zonadolar", scrap_zonadolar()),
+        ("Acomo", scrap_acomo()),
+        ("Billex", scrap_billex()),
+        ("CambiaFX", scrap_cambiafx()),
+        ("CambioDigitalPeru", scrap_cambiodigitalperu()),
+        ("CambiosMass", scrap_cambiomas()),
+        ("CambioMundial", scrap_cambiomundial(), 80),
+        ("CambioSeguro", scrap_cambioseguro()),
+        ("Cambios El Gordito", scrap_cambioselgordito()),
+        ("CambioSol", scrap_cambiosol()),
+        ("CambioX", scrap_cambiox()),
+        ("Cambix", scrap_cambix()),
+        ("ChapaCambio", scrap_chapacambio()),
+        ("ChaskiDolar", scrap_chaskidolar()),
+        ("DefiPeru", scrap_defiperu()),
+        ("Dichikash", scrap_dichikash()),
+        ("DineKash", scrap_dinekash()),
+        ("DinersFX", scrap_dinersfx()),
+        ("Dolarex", scrap_dolarex()),
+        ("DollarHouse", scrap_dollarhouse()),
+        ("Global66", scrap_global66()),
+        ("Hirpower", scrap_hirpower()),
+        ("InkaMoney", scrap_inkamoney()),
+        ("Intercambialo", scrap_intercambialo()),
+        ("IntiCambio", scrap_inticambio()),
+        ("JetPeru", scrap_jetperu()),
+        ("KallpaCambios", scrap_kallpacambios()),
+        ("Kambio", scrap_kambio()),
+        ("Kambista", scrap_kambista()),
+        ("MarketDollar", scrap_marketdollar()),
+        ("MegaMoney", scrap_megamoney()),
+        ("MercadoCambiario", scrap_mercadocambiario()),
+        ("MidpointFX", scrap_midpointfx()),
+        ("MisterDollar", scrap_misterdollar()),
+        ("MoneyHouse", scrap_moneyhouse()),
+        ("MoneyPlus", scrap_moneyplus()),
+        ("OkaneCambioDigital", scrap_okane()),
+        ("PeruDolar", scrap_perudolar()),
+        ("Rextie", scrap_rextie()),
+        ("Rissanpe", scrap_rissanpe()),
+        ("Roblex", scrap_roblex()),
+        ("Safex", scrap_safex()),
+        ("Securex", scrap_securex()),
+        ("SmartDollar", scrap_smartdollar()),
+        ("SRcambio", scrap_srcambio()),
+        ("TKambio", scrap_tkambio()),
+        ("TuCambista", scrap_tucambista()),
+        ("VipCapital", scrap_vipcapitalbusiness()),
+        ("WesternUnion", scrap_westernunion()),
+        ("X-Cambio", scrap_x_cambio()),
+        ("Yanki", scrap_yanki()),
+        ("ZonaDolar", scrap_zonadolar()),
     ]
 
-    # ✅ Ejecutar en paralelo
     coros = []
     for item in tasks:
         if len(item) == 3:
@@ -211,54 +340,74 @@ async def main():
             name, coro = item
             timeout_s = 25
         coros.append(_safe_call(name, coro, sem, timeout_s=timeout_s))
-    
-    resultados = await asyncio.gather(*coros)
 
+    resultados = await asyncio.gather(*coros)
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
-    # source/estado: conserva diagnóstico del scraper
+    # Normaliza + valida + etiqueta
+    final = []
     for r in resultados:
-        valid = is_valid_rate(r)
+        r = validate_and_tag(r)
 
-        # si el scraper ya definió source (ej: httpx/playwright), respétalo
-        if "source" not in r:
-            r["source"] = "scraper" if valid else "missing"
+        # Si vino error_type/exception_* desde _safe_call, mantenlo.
+        # Si el scraper devolvió su propio "error", clasifícalo.
+        if r.get("estado") == "error":
+            err = r.get("error") or r.get("scraper_error") or ""
+            r.setdefault("error_type", classify_error(err))
 
-        # si no es válido, marca error sin borrar info
-        if not valid:
-            r.setdefault("estado", "error")
-            # prioriza error propio, luego scraper_error de _safe_call, sino genérico
-            r.setdefault("error", r.get("scraper_error") or "missing compra/venta")
-
-    resultados = fix_inverted_compra_venta(resultados)
+        final.append(r)
 
     os.makedirs("data", exist_ok=True)
 
     with open("data/tasas.json", "w", encoding="utf-8") as f:
-        json.dump(resultados, f, ensure_ascii=False, indent=2)
+        json.dump(final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
 
-    ok = [r["casa"] for r in resultados if r.get("source") == "scraper"]
-    ms = [r["casa"] for r in resultados if r.get("source") == "missing"]
+    ok_list = [r["casa"] for r in final if r.get("source") == "scraper" and r.get("estado") == "ok"]
+    missing_list = [r["casa"] for r in final if r.get("source") == "missing"]
+    outlier_list = [r["casa"] for r in final if r.get("source") == "outlier"]
 
-    fails = [
-    {"casa": r.get("casa"), "error": (r.get("scraper_error") or r.get("error"))}
-    for r in resultados
-    if (
-        (r.get("scraper_error") or r.get("error") or r.get("estado") == "error")
-        and r.get("estado") != "bloqueado"
-    )
+    blocked_list = [
+        r["casa"] for r in final
+        if r.get("estado") == "error" and str(r.get("error_type", "")).startswith("blocked")
     ]
-    
+
+    # Errores detallados (no llenes infinito)
+    fails = []
+    for r in final:
+        if r.get("estado") in ("error", "outlier"):
+            fails.append({
+                "casa": r.get("casa"),
+                "estado": r.get("estado"),
+                "source": r.get("source"),
+                "error_type": r.get("error_type"),
+                "error": r.get("error"),
+                "status_code": r.get("status_code"),
+                "elapsed_ms": r.get("elapsed_ms"),
+                "exception_type": r.get("exception_type"),
+                "exception_message": r.get("exception_message"),
+                "traceback_last_lines": r.get("traceback_last_lines"),
+            })
+
     meta = {
         "run_at_utc": run_at,
         "run_date": hoy_lima,
-        "total": len(resultados),
-        "ok_scraper": len(ok),
-        "missing": len(ms),
-        "ok_list": ok,
-        "missing_list": ms,
-        "scraper_errors": fails[:80],
+        "total": len(final),
+        "ok_scraper": len(ok_list),
+        "missing": len(missing_list),
+        "outliers": len(outlier_list),
+        "blocked": len(blocked_list),
+        "ok_list": ok_list,
+        "missing_list": missing_list,
+        "outlier_list": outlier_list,
+        "blocked_list": blocked_list,
+        "scraper_errors": fails[:120],
+        "limits": {
+            "min_rate": MIN_RATE,
+            "max_rate": MAX_RATE,
+            "max_spread": MAX_SPREAD,
+            "concurrency": 15
+        }
     }
 
     with open("data/meta.json", "w", encoding="utf-8") as f:
@@ -267,16 +416,13 @@ async def main():
 
     # ===============================
     # ✅ SUNAT MENSUAL (separado)
-    # Solo 1 vez al día
     # ===============================
-
     out_path = "data/sunat_mensual.json"
 
     if already_updated_today(out_path, hoy_lima):
         print("✅ SUNAT mensual ya fue actualizado hoy. Skipping.")
     else:
-        # SUNAT puede ser más lento: timeout mayor
-        sunat_mensual = await _safe_call("sunat_mensual", scrap_sunat(), sem, timeout_s=90)
+        sunat_mensual = await _safe_call("SUNAT", scrap_sunat(), sem, timeout_s=90)
 
         if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
             payload = {**sunat_mensual, "run_date": hoy_lima, "run_at_utc": run_at}
@@ -289,11 +435,14 @@ async def main():
                 "run_date": hoy_lima,
                 "run_at_utc": run_at,
                 "dias": [],
-                "error": (sunat_mensual.get("scraper_error") if isinstance(sunat_mensual, dict) else "unknown"),
+                "error": (sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"),
+                "error_type": (sunat_mensual.get("error_type") if isinstance(sunat_mensual, dict) else "unknown"),
+                "traceback_last_lines": (sunat_mensual.get("traceback_last_lines") if isinstance(sunat_mensual, dict) else None),
             }
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
-            print(f"⚠️ SUNAT mensual FALLÓ. Se guardó {out_path} con error para no romper el workflow.")
+            print("⚠️ SUNAT mensual FALLÓ. Se guardó sunat_mensual.json con error para no romper el workflow.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
