@@ -347,8 +347,6 @@ async def main():
     # Normaliza + valida + etiqueta
     final = []
     for r in resultados:
-        # si vino con source=cloudflare o algo raro, lo respetamos
-        # pero si no tiene compra/venta, lo marcamos como error
         r = validate_and_tag(r)
 
         # Si es OK, asegúrate que tenga estado=ok
@@ -362,10 +360,15 @@ async def main():
             r["error_type"] = "blocked_cloudflare"
             r.setdefault("error", "cloudflare_blocked_or_challenge")
 
-        # Si es error y no tiene error_type, clasifica
+        # Si es error/bloqueado y no tiene error_type, clasifica
         if r.get("estado") in ("error", "bloqueado"):
             err = r.get("error") or r.get("scraper_error") or ""
             r.setdefault("error_type", classify_error(err))
+
+        # ✅ AQUÍ VA (normaliza 403/captcha/etc a source=blocked)
+        if str(r.get("error_type", "")).startswith("blocked"):
+            r["estado"] = "bloqueado"
+            r["source"] = "blocked"
 
         final.append(r)
 
