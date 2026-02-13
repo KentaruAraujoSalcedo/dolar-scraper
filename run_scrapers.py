@@ -344,6 +344,22 @@ async def main():
         # 1) Etiquetado por tasas (ok/regular/outlier/error)
         r = validate_and_tag(r)
 
+        # Si el scraper trajo source "técnico" (playwright, api, etc),
+        # normaliza a lo que diga validate_and_tag (scraper/regular/outlier/missing)
+        # y si no existe estado, asígnalo coherente.
+        if not r.get("estado"):
+            if r.get("source") == "scraper":
+                r["estado"] = "ok"
+            elif r.get("source") == "regular":
+                r["estado"] = "regular"
+            elif r.get("source") == "outlier":
+                r["estado"] = "outlier"
+            elif r.get("source") == "missing":
+                r["estado"] = "error"
+            elif r.get("source") in ("blocked", "cloudflare"):
+                r["estado"] = "bloqueado"
+                r["source"] = "blocked"
+
         # 2) Cloudflare explícito (si algún scraper pone source=cloudflare)
         if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
             r["estado"] = "bloqueado"
@@ -369,11 +385,11 @@ async def main():
         json.dump(final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
 
-    ok_list = [r["casa"] for r in final if r.get("estado") == "ok" and r.get("source") == "scraper"]
-    regular_list = [r["casa"] for r in final if r.get("estado") == "regular" and r.get("source") == "regular"]
-    outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier" and r.get("source") == "outlier"]
-    missing_list = [r["casa"] for r in final if r.get("source") == "missing"]
-    blocked_list = [r["casa"] for r in final if r.get("source") == "blocked" or r.get("estado") == "bloqueado"]
+    ok_list = [r["casa"] for r in final if r.get("estado") == "ok"]
+    regular_list = [r["casa"] for r in final if r.get("estado") == "regular"]
+    outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier"]
+    blocked_list = [r["casa"] for r in final if r.get("estado") == "bloqueado"]
+    missing_list = [r["casa"] for r in final if r.get("estado") == "error" and r.get("source") == "missing"]
 
     # Errores detallados (no metas regular aquí)
     fails = []
