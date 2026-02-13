@@ -165,7 +165,7 @@ def classify_error(err: str) -> str:
     if "captcha" in e:
         return "blocked_captcha"
     if "blocked_or_session" in e or "error4" in e:
-    return "blocked_or_session"
+        return "blocked_or_session"
 
     # Parse/selector
     if "no se pudieron identificar" in e or "no se pudo identificar" in e or "parse" in e:
