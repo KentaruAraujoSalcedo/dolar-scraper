@@ -67,7 +67,8 @@ from scrapers.zonadolar import scrap_zonadolar
 # ----------------------------
 MIN_RATE = 3.00
 MAX_RATE = 3.60
-MAX_SPREAD = 0.05  # ajusta: 0.05 es estricto y te limpia outliers feos
+MAX_SPREAD = 0.05          # "ok" competitivo
+MAX_SPREAD_REGULAR = 0.12  # "regular" (válido pero caro)
 
 
 def _is_number(x):
@@ -88,6 +89,7 @@ def fix_inverted_compra_venta(item: dict) -> dict:
         item["compra"], item["venta"] = v, c
         item["swapped"] = True
     return item
+
 
 def validate_and_tag(item: dict) -> dict:
     """
@@ -110,7 +112,7 @@ def validate_and_tag(item: dict) -> dict:
     c = item.get("compra")
     v = item.get("venta")
 
-    # 3) Rango absurdo => outlier "malo" (probable bug) => sí nullear
+    # 3) Rango absurdo => outlier "malo" (probable bug) => nullear
     if not (MIN_RATE <= c <= MAX_RATE) or not (MIN_RATE <= v <= MAX_RATE):
         item["estado"] = "outlier"
         item["source"] = "outlier"
@@ -125,7 +127,6 @@ def validate_and_tag(item: dict) -> dict:
     item["spread"] = round(spread, 6)
 
     if spread < 0:
-        # ya debió corregirse, pero por sanidad
         item["estado"] = "error"
         item["source"] = "missing"
         item["error_type"] = "negative_spread"
@@ -134,37 +135,28 @@ def validate_and_tag(item: dict) -> dict:
         item["venta"] = None
         return item
 
-    # 🔥 NUEVO: 2 umbrales
-    MAX_SPREAD_OK = MAX_SPREAD          # ej 0.05 (top competitivo)
-    MAX_SPREAD_REGULAR = 0.12           # ej 0.12 (tasa real pero cara)
-
     if spread > MAX_SPREAD_REGULAR:
-        # demasiado raro => outlier fuerte (probable lectura mala o tarifa rarísima)
         item["estado"] = "outlier"
         item["source"] = "outlier"
         item["error_type"] = "outlier_spread_high"
         item["error"] = f"outlier_spread_high spread={spread:.6f} (max {MAX_SPREAD_REGULAR}) compra={c} venta={v}"
-        # aquí puedes decidir nullear o no:
-        # yo lo dejaría visible, pero marcado. Si quieres ocultarlo:
+        # acá NO nuleo por defecto; si quieres ocultarlo, descomenta:
         # item["compra"] = None; item["venta"] = None
         return item
 
-    if spread > MAX_SPREAD_OK:
-        # tasa real pero poco competitiva => NO es error, NO nullear
+    if spread > MAX_SPREAD:
         item["estado"] = "regular"
         item["source"] = "regular"
         item["error_type"] = "spread_alto"
-        item["error"] = f"spread_alto spread={spread:.6f} (ok<= {MAX_SPREAD_OK}) compra={c} venta={v}"
+        item["error"] = f"spread_alto spread={spread:.6f} (ok<= {MAX_SPREAD}) compra={c} venta={v}"
         return item
 
     item.setdefault("estado", "ok")
     item.setdefault("source", "scraper")
     return item
 
+
 def classify_error(err: str) -> str:
-    """
-    Clasifica en categorías útiles para tu meta.
-    """
     if not err:
         return "unknown"
 
@@ -173,7 +165,6 @@ def classify_error(err: str) -> str:
     if "timeout" in e:
         return "timeout"
 
-    # Bloqueos típicos
     if "403" in e or "forbidden" in e:
         return "blocked_403"
     if "cloudflare" in e or "cf" in e:
@@ -183,7 +174,6 @@ def classify_error(err: str) -> str:
     if "blocked_or_session" in e or "error4" in e:
         return "blocked_or_session"
 
-    # Parse/selector
     if "no se pudieron identificar" in e or "no se pudo identificar" in e or "parse" in e:
         return "parse_error"
 
@@ -191,9 +181,6 @@ def classify_error(err: str) -> str:
 
 
 def already_updated_today(path: str, hoy_iso: str) -> bool:
-    """
-    Devuelve True si sunat_mensual.json ya fue generado hoy y tiene dias válidos.
-    """
     try:
         if not os.path.exists(path):
             return False
@@ -209,10 +196,6 @@ def already_updated_today(path: str, hoy_iso: str) -> bool:
 
 
 async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 25):
-    """
-    Ejecuta un scraper con límite de concurrencia + timeout.
-    Retorna dict SIEMPRE, con diagnóstico.
-    """
     async with sem:
         t0 = time.perf_counter()
         try:
@@ -256,20 +239,14 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
         except Exception as e:
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-            # intenta extraer status_code si viene en excepciones de httpx/requests
             status_code = None
             try:
-                # httpx.HTTPStatusError tiene .response.status_code
                 if hasattr(e, "response") and getattr(e, "response") is not None:
                     status_code = getattr(getattr(e, "response"), "status_code", None)
-                # requests.exceptions.HTTPError a veces tiene .response.status_code
-                if status_code is None and hasattr(e, "args"):
-                    pass
             except Exception:
                 status_code = None
 
             tb_lines = traceback.format_exc().splitlines()
-
             err_msg = str(e) or "exception_no_message"
             err_type = classify_error(err_msg)
 
@@ -362,28 +339,24 @@ async def main():
     resultados = await asyncio.gather(*coros)
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
-    # Normaliza + valida + etiqueta
     final = []
     for r in resultados:
+        # 1) Etiquetado por tasas (ok/regular/outlier/error)
         r = validate_and_tag(r)
 
-        # Si es OK, asegúrate que tenga estado=ok
-        if r.get("source") == "scraper" and r.get("estado") not in ("outlier", "error", "bloqueado"):
-            r["estado"] = "ok"
-
-        # Si es cloudflare con null/null => bloqueado cloudflare
+        # 2) Cloudflare explícito (si algún scraper pone source=cloudflare)
         if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
             r["error_type"] = "blocked_cloudflare"
             r.setdefault("error", "cloudflare_blocked_or_challenge")
 
-        # Si es error/bloqueado y no tiene error_type, clasifica
-        if r.get("estado") in ("error", "bloqueado"):
+        # 3) Si es error/bloqueado sin error_type, clasifica
+        if r.get("estado") in ("error", "bloqueado") and not r.get("error_type"):
             err = r.get("error") or r.get("scraper_error") or ""
-            r.setdefault("error_type", classify_error(err))
+            r["error_type"] = classify_error(err)
 
-        # ✅ AQUÍ VA (normaliza 403/captcha/etc a source=blocked)
+        # 4) Normaliza cualquier blocked_* a estado/source blocked
         if str(r.get("error_type", "")).startswith("blocked"):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
@@ -396,16 +369,13 @@ async def main():
         json.dump(final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
 
-    ok_list = [r["casa"] for r in final if r.get("source") == "scraper" and r.get("estado") == "ok"]
+    ok_list = [r["casa"] for r in final if r.get("estado") == "ok" and r.get("source") == "scraper"]
+    regular_list = [r["casa"] for r in final if r.get("estado") == "regular" and r.get("source") == "regular"]
+    outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier" and r.get("source") == "outlier"]
     missing_list = [r["casa"] for r in final if r.get("source") == "missing"]
-    outlier_list = [r["casa"] for r in final if r.get("source") == "outlier"]
+    blocked_list = [r["casa"] for r in final if r.get("source") == "blocked" or r.get("estado") == "bloqueado"]
 
-    blocked_list = [
-        r["casa"] for r in final
-        if r.get("estado") == "bloqueado" or str(r.get("error_type", "")).startswith("blocked")
-    ]
-
-    # Errores detallados (no llenes infinito)
+    # Errores detallados (no metas regular aquí)
     fails = []
     for r in final:
         if r.get("estado") in ("error", "outlier", "bloqueado"):
@@ -426,19 +396,29 @@ async def main():
         "run_at_utc": run_at,
         "run_date": hoy_lima,
         "total": len(final),
-        "ok_scraper": len(ok_list),
+
+        # ✅ métricas
+        "ok_scraper": len(ok_list),                 # solo top competitivo
+        "regular": len(regular_list),               # válido pero caro
+        "ok_total": len(ok_list) + len(regular_list),
+
         "missing": len(missing_list),
         "outliers": len(outlier_list),
         "blocked": len(blocked_list),
+
+        # ✅ listas
         "ok_list": ok_list,
+        "regular_list": regular_list,
         "missing_list": missing_list,
         "outlier_list": outlier_list,
         "blocked_list": blocked_list,
+
         "scraper_errors": fails[:120],
         "limits": {
             "min_rate": MIN_RATE,
             "max_rate": MAX_RATE,
-            "max_spread": MAX_SPREAD,
+            "max_spread_ok": MAX_SPREAD,
+            "max_spread_regular": MAX_SPREAD_REGULAR,
             "concurrency": 15
         }
     }
