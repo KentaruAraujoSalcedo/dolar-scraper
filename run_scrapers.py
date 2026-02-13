@@ -347,15 +347,26 @@ async def main():
     # Normaliza + valida + etiqueta
     final = []
     for r in resultados:
+        # si vino con source=cloudflare o algo raro, lo respetamos
+        # pero si no tiene compra/venta, lo marcamos como error
         r = validate_and_tag(r)
 
-        # Si vino error_type/exception_* desde _safe_call, mantenlo.
-        # Si el scraper devolvió su propio "error", clasifícalo.
-        if r.get("estado") == "error":
-            err = r.get("error") or r.get("scraper_error") or ""
-            r.setdefault("error_type", classify_error(err))
+    # Si es OK, asegúrate que tenga estado=ok
+    if r.get("source") == "scraper" and r.get("estado") in (None, "", "scraper"):
+        r["estado"] = "ok"
 
-        final.append(r)
+    # Si es cloudflare con null/null => bloqueado cloudflare
+    if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
+        r["estado"] = "bloqueado"
+        r["error_type"] = "blocked_cloudflare"
+        r.setdefault("error", "cloudflare_blocked_or_challenge")
+
+    # Si es error y no tiene error_type, clasifica
+    if r.get("estado") in ("error", "bloqueado"):
+        err = r.get("error") or r.get("scraper_error") or ""
+        r.setdefault("error_type", classify_error(err))
+
+    final.append(r)
 
     os.makedirs("data", exist_ok=True)
 
@@ -369,7 +380,7 @@ async def main():
 
     blocked_list = [
         r["casa"] for r in final
-        if r.get("estado") == "error" and str(r.get("error_type", "")).startswith("blocked")
+        if r.get("estado") == "bloqueado" or str(r.get("error_type", "")).startswith("blocked")
     ]
 
     # Errores detallados (no llenes infinito)
