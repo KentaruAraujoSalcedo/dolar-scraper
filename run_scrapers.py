@@ -154,7 +154,7 @@ async def main():
         ("cambiafx", scrap_cambiafx()),
         ("cambiodigitalperu", scrap_cambiodigitalperu()),
         ("cambiomas", scrap_cambiomas()),
-        ("cambiomundial", scrap_cambiomundial(), 45),
+        ("cambiomundial", scrap_cambiomundial(), 80),
         ("cambioseguro", scrap_cambioseguro()),
         ("cambioselgordito", scrap_cambioselgordito()),
         ("cambiosol", scrap_cambiosol()),
@@ -242,9 +242,12 @@ async def main():
     ms = [r["casa"] for r in resultados if r.get("source") == "missing"]
 
     fails = [
-        {"casa": r.get("casa"), "error": (r.get("scraper_error") or r.get("error"))}
-        for r in resultados
-        if (r.get("scraper_error") or r.get("error") or r.get("estado") == "error")
+    {"casa": r.get("casa"), "error": (r.get("scraper_error") or r.get("error"))}
+    for r in resultados
+    if (
+        (r.get("scraper_error") or r.get("error") or r.get("estado") == "error")
+        and r.get("estado") != "bloqueado"
+    )
     ]
     
     meta = {
