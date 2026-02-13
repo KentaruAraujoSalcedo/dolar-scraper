@@ -351,22 +351,22 @@ async def main():
         # pero si no tiene compra/venta, lo marcamos como error
         r = validate_and_tag(r)
 
-    # Si es OK, asegúrate que tenga estado=ok
-    if r.get("source") == "scraper" and r.get("estado") in (None, "", "scraper"):
-        r["estado"] = "ok"
+        # Si es OK, asegúrate que tenga estado=ok
+        if r.get("source") == "scraper" and r.get("estado") in (None, "", "scraper"):
+            r["estado"] = "ok"
 
-    # Si es cloudflare con null/null => bloqueado cloudflare
-    if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
-        r["estado"] = "bloqueado"
-        r["error_type"] = "blocked_cloudflare"
-        r.setdefault("error", "cloudflare_blocked_or_challenge")
+        # Si es cloudflare con null/null => bloqueado cloudflare
+        if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
+            r["estado"] = "bloqueado"
+            r["error_type"] = "blocked_cloudflare"
+            r.setdefault("error", "cloudflare_blocked_or_challenge")
 
-    # Si es error y no tiene error_type, clasifica
-    if r.get("estado") in ("error", "bloqueado"):
-        err = r.get("error") or r.get("scraper_error") or ""
-        r.setdefault("error_type", classify_error(err))
+        # Si es error y no tiene error_type, clasifica
+        if r.get("estado") in ("error", "bloqueado"):
+            err = r.get("error") or r.get("scraper_error") or ""
+            r.setdefault("error_type", classify_error(err))
 
-    final.append(r)
+        final.append(r)
 
     os.makedirs("data", exist_ok=True)
 
@@ -386,7 +386,7 @@ async def main():
     # Errores detallados (no llenes infinito)
     fails = []
     for r in final:
-        if r.get("estado") in ("error", "outlier"):
+        if r.get("estado") in ("error", "outlier", "bloqueado"):
             fails.append({
                 "casa": r.get("casa"),
                 "estado": r.get("estado"),
