@@ -13,6 +13,7 @@ jobs:
     env:
       PLAYWRIGHT_BROWSERS_PATH: 0
       TUCAMBISTA_OCP_KEY: ${{ secrets.TUCAMBISTA_OCP_KEY }}
+      CAMBIX_OCP_KEY: ${{ secrets.CAMBIX_OCP_KEY }}
 
     steps:
       - uses: actions/checkout@v4
