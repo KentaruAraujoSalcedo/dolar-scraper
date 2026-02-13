@@ -1,10 +1,25 @@
 import httpx
 from scrapers.utils import normalize_rate
 
+def _percentile(values, p: float):
+    """p en [0..1]. Devuelve percentil con método nearest-rank."""
+    if not values:
+        return None
+    vals = sorted(values)
+    # nearest rank: ceil(p*n) - 1
+    n = len(vals)
+    idx = int((p * n) + 0.999999) - 1
+    if idx < 0:
+        idx = 0
+    if idx >= n:
+        idx = n - 1
+    return vals[idx]
+
 async def scrap_mercadocambiario():
     casa = "MercadoCambiario"
     url = "https://www.mercadocambiario.pe/"
-    endpoint = "https://www.mercadocambiario.pe/api/order/get/actives-all"
+    endpoint_orders = "https://www.mercadocambiario.pe/api/order/get/actives-all"
+    endpoint_admin = "https://www.mercadocambiario.pe/api/mercado/get/admin-data"
 
     headers = {
         "User-Agent": "Mozilla/5.0",
@@ -15,79 +30,88 @@ async def scrap_mercadocambiario():
     }
 
     try:
-        async with httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True) as client:
-            r = await client.post(endpoint, json={})
+        async with httpx.AsyncClient(headers=headers, timeout=25, follow_redirects=True) as client:
+            # 1) open/close (estado del mercado)
+            admin_open = None
+            try:
+                ra = await client.post(endpoint_admin, json={})
+                ra.raise_for_status()
+                admin = ra.json()
+                if isinstance(admin, dict):
+                    admin_open = admin.get("open")
+            except Exception:
+                admin_open = None  # no rompe el scraper
+
+            # 2) órdenes ejecutadas / recientes
+            r = await client.post(endpoint_orders, json={})
             r.raise_for_status()
             data = r.json()
 
-        # Estructura observada: lista de objetos, uno con "currentOrders"
-        current_orders = []
+        # Extraer successfulOrders
+        successful = []
         if isinstance(data, list):
             for block in data:
-                if isinstance(block, dict) and isinstance(block.get("currentOrders"), list):
-                    current_orders.extend(block["currentOrders"])
+                if isinstance(block, dict) and isinstance(block.get("successfulOrders"), list):
+                    successful.extend(block["successfulOrders"])
+        elif isinstance(data, dict) and isinstance(data.get("successfulOrders"), list):
+            successful.extend(data["successfulOrders"])
 
-        if not current_orders:
+        # Sacar rates válidos
+        rates = []
+        for o in successful:
+            if not isinstance(o, dict):
+                continue
+            price = o.get("typeExchangeAmount")
+            if price is None:
+                continue
+            try:
+                p = float(price)
+            except Exception:
+                continue
+            if 2.5 <= p <= 5.5:
+                rates.append(p)
+
+        if not rates:
+            # Si no hay rates, lo marcamos cerrado (o error suave)
             return {
                 "casa": casa,
                 "url": url,
                 "compra": None,
                 "venta": None,
-                "estado": "error",
-                "error": "No se encontró currentOrders en la respuesta.",
+                "estado": "cerrado" if admin_open is False else "error",
+                "source": "successfulOrders",
+                "error": "No hay successfulOrders con typeExchangeAmount válido.",
             }
 
-        buys = []
-        sells = []
+        # Definimos compra/venta por percentiles para crear spread robusto
+        # 10% bajo = "venta" (más barato), 90% alto = "compra" (más caro)
+        venta_raw = _percentile(rates, 0.10)
+        compra_raw = _percentile(rates, 0.90)
 
-        for o in current_orders:
-            if not isinstance(o, dict):
-                continue
-            op = (o.get("typeOperation") or "").lower().strip()
-            price = o.get("typeExchangeAmount")
+        compra = normalize_rate(str(compra_raw)) if compra_raw is not None else None
+        venta  = normalize_rate(str(venta_raw)) if venta_raw is not None else None
 
-            if price is None:
-                continue
+        # Asegurar orden lógico
+        if isinstance(compra, (int, float)) and isinstance(venta, (int, float)) and compra < venta:
+            # si por alguna razón quedó invertido, swap
+            compra, venta = venta, compra
 
-            try:
-                p = float(price)
-            except Exception:
-                continue
-
-            # filtro de seguridad (tipo de cambio razonable)
-            if not (2.5 <= p <= 5.5):
-                continue
-
-            if op == "buy":
-                buys.append(p)
-            elif op == "sell":
-                sells.append(p)
-
-        # “mejor” compra = máximo buy, “mejor” venta = mínimo sell
-        compra = max(buys) if buys else None
-        venta = min(sells) if sells else None
-
-        compra_n = normalize_rate(str(compra)) if compra is not None else None
-        venta_n  = normalize_rate(str(venta)) if venta is not None else None
-
-        cerrado = (compra_n is None and venta_n is None) or (compra_n == 0.0 and venta_n == 0.0)
-
-        estado = "cerrado" if cerrado else "abierto"
-        if compra_n is None or venta_n is None:
+        estado = "abierto"
+        if admin_open is False:
+            estado = "cerrado"
+        if compra is None or venta is None:
             estado = "error"
 
-        out = {
+        return {
             "casa": casa,
             "url": url,
-            "compra": compra_n,
-            "venta": venta_n,
+            "compra": compra,
+            "venta": venta,
             "estado": estado,
+            "source": "successfulOrders_percentiles",
+            "open": admin_open,
+            "n_rates": len(rates),
         }
-
-        if estado == "error":
-            out["error"] = "No se pudo calcular compra/venta (faltan órdenes buy o sell)."
-
-        return out
 
     except Exception as e:
         return {
