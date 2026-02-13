@@ -1,7 +1,28 @@
 import re
-import asyncio
 import httpx
 from scrapers.utils import normalize_rate
+
+
+# -------------------------
+# Helpers
+# -------------------------
+def _snippet(s: str, n=600) -> str:
+    return (s or "").replace("\r", "").replace("\n", " ")[:n]
+
+
+def _is_cloudflare_challenge(html: str) -> bool:
+    h = (html or "").lower()
+    return any(x in h for x in [
+        "un momento",               # es-ES
+        "just a moment",            # en-US
+        "/cdn-cgi/",                # cloudflare challenge path
+        "cf-chl-",                  # challenge markers
+        "cloudflare",
+        "attention required",
+        "checking your browser",
+        "verify you are human",
+        "captcha"
+    ])
 
 
 # -------------------------
@@ -41,9 +62,6 @@ def _parse_rates(html: str):
 # -------------------------
 # Playwright fallback
 # -------------------------
-def _snippet(s: str, n=600) -> str:
-    return (s or "").replace("\r", "").replace("\n", " ")[:n]
-
 async def _fetch_html_playwright(target_url: str) -> str:
     from playwright.async_api import async_playwright
 
@@ -59,27 +77,24 @@ async def _fetch_html_playwright(target_url: str) -> str:
         )
         page = await context.new_page()
 
-        # 1) entrar al home para sembrar cookies
+        # sembrar cookies
         await page.goto("https://www.cambiomundial.com/", wait_until="domcontentloaded", timeout=45000)
 
-        # 2) ir al endpoint real
+        # ir al endpoint
         await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 
-        # 3) esperar explícitamente a los elementos (clave)
+        # esperar contenido real (si no aparece, probablemente challenge)
         try:
-            await page.wait_for_selector(
-                "label#lblValorCompra, input#txtValorCompra",
-                timeout=20000
-            )
+            await page.wait_for_selector("label#lblValorCompra, input#txtValorCompra", timeout=20000)
         except Exception:
-            # igual devolvemos el HTML para debug
             html = await page.content()
             await browser.close()
-            raise RuntimeError(f"Playwright: no apareció selector de compra. snip={_snippet(html)}")
+            return html  # devolvemos igual para detectar challenge
 
         html = await page.content()
         await browser.close()
         return html
+
 
 # -------------------------
 # Scraper principal
@@ -99,25 +114,30 @@ async def scrap_cambiomundial():
     timeout = httpx.Timeout(25.0, connect=10.0)
 
     # =========
-    # 1️⃣ Intento con httpx (rápido)
+    # 1) Intento httpx (rápido)
     # =========
     try:
-        async with httpx.AsyncClient(
-            headers=headers,
-            timeout=timeout,
-            follow_redirects=True
-        ) as client:
+        async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as client:
+            await client.get(url)  # warm-up cookies
 
-            # Warm-up cookies (1 sola vez)
-            await client.get(url)
-
-            # Solo 1 intento real (no queremos perder tiempo)
             r = await client.get(endpoint)
             r.raise_for_status()
 
             html = r.text or ""
-            compra, venta = _parse_rates(html)
 
+            # Cloudflare challenge detectado
+            if _is_cloudflare_challenge(html):
+                return {
+                    "casa": casa,
+                    "url": url,
+                    "compra": None,
+                    "venta": None,
+                    "estado": "bloqueado",
+                    "source": "cloudflare",
+                    "error": f"Cloudflare challenge (httpx). snip={_snippet(html)}",
+                }
+
+            compra, venta = _parse_rates(html)
             if compra and venta:
                 return {
                     "casa": casa,
@@ -131,14 +151,25 @@ async def scrap_cambiomundial():
     except Exception:
         pass  # Si falla, vamos a Playwright
 
-
     # =========
-    # 2️⃣ Fallback Playwright
+    # 2) Fallback Playwright
     # =========
     try:
         html2 = await _fetch_html_playwright(endpoint)
-        compra2, venta2 = _parse_rates(html2)
 
+        # Cloudflare challenge detectado
+        if _is_cloudflare_challenge(html2):
+            return {
+                "casa": casa,
+                "url": url,
+                "compra": None,
+                "venta": None,
+                "estado": "bloqueado",
+                "source": "cloudflare",
+                "error": f"Cloudflare challenge (playwright). snip={_snippet(html2)}",
+            }
+
+        compra2, venta2 = _parse_rates(html2)
         if compra2 and venta2:
             return {
                 "casa": casa,
