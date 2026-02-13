@@ -5,10 +5,15 @@ from scrapers.utils import normalize_rate
 URL = "https://perudolar.pe/"
 CASA = "PeruDolar"
 
-# más flexible: 3.34 / 3.345 / 3,345
-RATE_RE = re.compile(r"\b\d[.,]\d{2,4}\b")
+# 1) extractor dirigido al bloque correcto (según tu screenshot)
+PRECIOS_HOME_RE = re.compile(
+    r'id="preciosHome".{0,2000}?Compra:\s*.*?(?P<compra>\d[.,]\d{1,4}).{0,800}?'
+    r'Venta:\s*(?P<venta>\d[.,]\d{1,4})',
+    re.IGNORECASE | re.DOTALL
+)
 
-# captura cerca del texto Compra/Venta
+# 2) fallback por contexto "compra/venta" global
+RATE_RE = re.compile(r"\b\d[.,]\d{2,4}\b")
 BUY_CTX_RE  = re.compile(r"compra.{0,120}?(\d[.,]\d{2,4})", re.IGNORECASE | re.DOTALL)
 SELL_CTX_RE = re.compile(r"venta.{0,120}?(\d[.,]\d{2,4})",  re.IGNORECASE | re.DOTALL)
 
@@ -17,6 +22,18 @@ def _to_float(s: str):
         return float((s or "").replace(",", ".").strip())
     except Exception:
         return None
+
+def _extract_from_precios_home(html: str):
+    m = PRECIOS_HOME_RE.search(html or "")
+    if not m:
+        return None, None
+    buy = _to_float(m.group("compra"))
+    sell = _to_float(m.group("venta"))
+    if buy is None or sell is None:
+        return None, None
+    if not (2.8 <= buy <= 4.5 and 2.8 <= sell <= 4.5):
+        return None, None
+    return (buy, sell) if buy <= sell else (sell, buy)
 
 def _extract_by_context(html: str):
     mb = BUY_CTX_RE.search(html or "")
@@ -30,14 +47,12 @@ def _extract_by_context(html: str):
     if buy is None or sell is None:
         return None, None
 
-    # rango razonable PEN/USD
     if not (2.8 <= buy <= 4.5 and 2.8 <= sell <= 4.5):
         return None, None
 
     return (buy, sell) if buy <= sell else (sell, buy)
 
 def _extract_buy_sell_fallback(html: str):
-    # candidatos razonables de tipo de cambio
     candidates = []
     for m in RATE_RE.finditer(html or ""):
         x = _to_float(m.group(0))
@@ -46,7 +61,6 @@ def _extract_buy_sell_fallback(html: str):
         if 2.8 <= x <= 4.5:
             candidates.append((m.start(), x))
 
-    # pareja cercana en el HTML (más confiable)
     for i in range(len(candidates) - 1):
         p1, x1 = candidates[i]
         p2, x2 = candidates[i + 1]
@@ -54,7 +68,6 @@ def _extract_buy_sell_fallback(html: str):
             buy, sell = (x1, x2) if x1 <= x2 else (x2, x1)
             return buy, sell
 
-    # fallback: min/max (evita agarrar dos del mismo valor repetido)
     uniq = sorted({round(x, 4) for _, x in candidates})
     if len(uniq) >= 2:
         return uniq[0], uniq[-1]
@@ -80,10 +93,14 @@ async def scrap_perudolar():
             r.raise_for_status()
             html = r.text or ""
 
-        # 1) intento robusto por contexto
-        buy, sell = _extract_by_context(html)
+        # 1) mejor: bloque exacto
+        buy, sell = _extract_from_precios_home(html)
 
-        # 2) fallback antiguo si no encontró por contexto
+        # 2) fallback por contexto
+        if buy is None or sell is None:
+            buy, sell = _extract_by_context(html)
+
+        # 3) último recurso
         if buy is None or sell is None:
             buy, sell = _extract_buy_sell_fallback(html)
 
@@ -98,7 +115,7 @@ async def scrap_perudolar():
                 "venta": None,
                 "estado": "error",
                 "error_type": "parse_error",
-                "error": "No se pudo identificar compra/venta (selector/contexto no encontrado).",
+                "error": "No se pudo identificar compra/venta (preciosHome/contexto).",
             }
 
         cerrado = (compra == 0.0 and venta == 0.0)
