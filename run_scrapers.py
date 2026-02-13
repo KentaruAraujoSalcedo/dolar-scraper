@@ -68,9 +68,9 @@ from scrapers.zonadolar import scrap_zonadolar
 MIN_RATE = 3.00
 MAX_RATE = 3.60
 
-MAX_SPREAD = 0.05          # "ok" competitivo
-MAX_SPREAD_REGULAR = 0.12  # "regular" (válido pero caro)
-TOL_REGULAR = 0.001        # tolerancia para bordes tipo 0.121
+MAX_SPREAD_OK = 0.05          # "scraper" (competitivo)
+MAX_SPREAD_REGULAR = 0.12     # "regular" (válido pero caro)
+TOL_REGULAR = 0.001           # tolerancia para bordes tipo 0.121
 
 
 def _is_number(x):
@@ -78,10 +78,7 @@ def _is_number(x):
 
 
 def is_valid_rate(item: dict) -> bool:
-    try:
-        return _is_number(item.get("compra")) and _is_number(item.get("venta"))
-    except Exception:
-        return False
+    return _is_number(item.get("compra")) and _is_number(item.get("venta"))
 
 
 def fix_inverted_compra_venta(item: dict) -> dict:
@@ -93,30 +90,30 @@ def fix_inverted_compra_venta(item: dict) -> dict:
     return item
 
 
-def validate_and_tag(item: dict) -> dict:
+def validate_and_tag_to_source(item: dict) -> dict:
     """
-    Etiquetas:
-    - estado: ok / regular / outlier / error / bloqueado
-    - source: scraper / regular / outlier / missing / blocked
+    ✅ Opción A: SOLO usamos `source` como clasificación final:
+      - source: scraper / regular / outlier / missing / blocked
+    Nota: NO dependemos de `estado` para nada.
     """
-    c = item.get("compra")
-    v = item.get("venta")
-
-    # 1) No hay números => error real
-    if not is_valid_rate(item):
-        item.setdefault("estado", "error")
-        item.setdefault("source", "missing")
-        item.setdefault("error", item.get("error") or "missing compra/venta")
+    # Si ya viene marcado como blocked por el scraper, respétalo
+    if item.get("source") in ("blocked", "cloudflare"):
+        item["source"] = "blocked"
         return item
 
-    # 2) Normaliza invertido si aplica
+    # Si no hay números => missing
+    if not is_valid_rate(item):
+        item.setdefault("error", item.get("error") or "missing compra/venta")
+        item["source"] = "missing"
+        return item
+
+    # Normaliza invertido si aplica
     item = fix_inverted_compra_venta(item)
     c = item.get("compra")
     v = item.get("venta")
 
-    # 3) Rango absurdo => outlier "malo" (probable bug) => nullear
+    # Rango absurdo => outlier (y nullear)
     if not (MIN_RATE <= c <= MAX_RATE) or not (MIN_RATE <= v <= MAX_RATE):
-        item["estado"] = "outlier"
         item["source"] = "outlier"
         item["error_type"] = "outlier_range"
         item["error"] = f"outlier_range compra={c} venta={v} (expected {MIN_RATE}-{MAX_RATE})"
@@ -124,12 +121,10 @@ def validate_and_tag(item: dict) -> dict:
         item["venta"] = None
         return item
 
-    # 4) Spread
     spread = v - c
     item["spread"] = round(spread, 6)
 
     if spread < 0:
-        item["estado"] = "error"
         item["source"] = "missing"
         item["error_type"] = "negative_spread"
         item["error"] = f"negative_spread compra={c} venta={v}"
@@ -137,8 +132,8 @@ def validate_and_tag(item: dict) -> dict:
         item["venta"] = None
         return item
 
+    # Spread exagerado => outlier (NO nuleo por defecto)
     if spread > (MAX_SPREAD_REGULAR + TOL_REGULAR):
-        item["estado"] = "outlier"
         item["source"] = "outlier"
         item["error_type"] = "outlier_spread_high"
         item["error"] = (
@@ -147,15 +142,17 @@ def validate_and_tag(item: dict) -> dict:
         )
         return item
 
-    if spread > MAX_SPREAD:
-        item["estado"] = "regular"
+    # Spread alto pero válido => regular
+    if spread > MAX_SPREAD_OK:
         item["source"] = "regular"
         item["error_type"] = "spread_alto"
-        item["error"] = f"spread_alto spread={spread:.6f} (ok<= {MAX_SPREAD}) compra={c} venta={v}"
+        item["error"] = f"spread_alto spread={spread:.6f} (ok<= {MAX_SPREAD_OK}) compra={c} venta={v}"
         return item
 
-    item.setdefault("estado", "ok")
-    item.setdefault("source", "scraper")
+    # Ok
+    item["source"] = "scraper"
+    item.pop("error_type", None)
+    item.pop("error", None)
     return item
 
 
@@ -167,7 +164,6 @@ def classify_error(err: str) -> str:
 
     if "timeout" in e:
         return "timeout"
-
     if "403" in e or "forbidden" in e:
         return "blocked_403"
     if "cloudflare" in e or "cf" in e:
@@ -176,7 +172,6 @@ def classify_error(err: str) -> str:
         return "blocked_captcha"
     if "blocked_or_session" in e or "error4" in e:
         return "blocked_or_session"
-
     if "no se pudieron identificar" in e or "no se pudo identificar" in e or "parse" in e:
         return "parse_error"
 
@@ -199,6 +194,10 @@ def already_updated_today(path: str, hoy_iso: str) -> bool:
 
 
 async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 25):
+    """
+    Ejecuta un scraper con límite de concurrencia + timeout.
+    Retorna dict SIEMPRE, con diagnóstico.
+    """
     async with sem:
         t0 = time.perf_counter()
         try:
@@ -211,7 +210,6 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
                     "url": None,
                     "compra": None,
                     "venta": None,
-                    "estado": "error",
                     "source": "missing",
                     "elapsed_ms": elapsed_ms,
                     "error": "returned_none_or_not_dict",
@@ -232,7 +230,6 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
                 "url": None,
                 "compra": None,
                 "venta": None,
-                "estado": "error",
                 "source": "missing",
                 "elapsed_ms": elapsed_ms,
                 "error": f"timeout_{timeout_s}s",
@@ -258,7 +255,6 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
                 "url": None,
                 "compra": None,
                 "venta": None,
-                "estado": "error",
                 "source": "missing",
                 "elapsed_ms": elapsed_ms,
                 "error": err_msg,
@@ -344,38 +340,27 @@ async def main():
 
     final = []
     for r in resultados:
-        # 1) Etiqueta por tasas (ok/regular/outlier/error)
-        r = validate_and_tag(r)
-
-        # 2) Cloudflare explícito (si algún scraper puso source=cloudflare)
-        if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
-            r["estado"] = "bloqueado"
-            r["source"] = "blocked"
-            r["error_type"] = "blocked_cloudflare"
-            r.setdefault("error", "cloudflare_blocked_or_challenge")
-
-        # 3) Si es error/bloqueado y no tiene error_type, clasifica
-        if r.get("estado") in ("error", "bloqueado") and not r.get("error_type"):
-            err = r.get("error") or r.get("scraper_error") or ""
-            r["error_type"] = classify_error(err)
-
-        # 4) Normaliza cualquier blocked_* a bloqueado/blocked
+        # 1) Si fue un error/bloqueo detectado por excepción, tradúcelo a blocked si aplica
+        #    (Ej: 403, cloudflare, captcha)
         if str(r.get("error_type", "")).startswith("blocked"):
-            r["estado"] = "bloqueado"
             r["source"] = "blocked"
 
-        # 5) Normaliza source final según estado (override de "playwright", "api", etc.)
-        estado = r.get("estado")
-        if estado == "ok":
-            r["source"] = "scraper"
-        elif estado == "regular":
-            r["source"] = "regular"
-        elif estado == "outlier":
-            r["source"] = "outlier"
-        elif estado == "bloqueado":
-            r["source"] = "blocked"
-        elif estado == "error":
-            r.setdefault("source", "missing")
+        # 2) Clasificación FINAL SOLO POR source (scraper/regular/outlier/missing/blocked)
+        r = validate_and_tag_to_source(r)
+
+        # 3) Si quedó missing y no tiene error_type, clasifica por mensaje (útil para meta)
+        if r.get("source") == "missing" and not r.get("error_type"):
+            r["error_type"] = classify_error(r.get("error") or "")
+
+        # 4) Normaliza (por si algún scraper deja cosas raras)
+        if r.get("source") not in ("scraper", "regular", "outlier", "missing", "blocked"):
+            if _is_number(r.get("compra")) and _is_number(r.get("venta")):
+                r["source"] = "scraper"
+            else:
+                r["source"] = "missing"
+
+        # 5) Opcional: limpia campo estado si quedó por ahí (ya NO lo usamos)
+        r.pop("estado", None)
 
         final.append(r)
 
@@ -385,22 +370,19 @@ async def main():
         json.dump(final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
 
-    # ✅ conteos y listas (basado en estado, ya corregido)
-    ok_list = [r["casa"] for r in final if r.get("estado") == "ok"]
-    regular_list = [r["casa"] for r in final if r.get("estado") == "regular"]
-    missing_list = [r["casa"] for r in final if r.get("estado") == "error" and r.get("source") == "missing"]
-    outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier"]
-    blocked_list = [r["casa"] for r in final if r.get("estado") == "bloqueado"]
+    # ✅ conteos y listas (SOLO POR source)
+    ok_list = [r["casa"] for r in final if r.get("source") == "scraper"]
+    regular_list = [r["casa"] for r in final if r.get("source") == "regular"]
+    missing_list = [r["casa"] for r in final if r.get("source") == "missing"]
+    outlier_list = [r["casa"] for r in final if r.get("source") == "outlier"]
+    blocked_list = [r["casa"] for r in final if r.get("source") == "blocked"]
 
-    ok_total = len(ok_list) + len(regular_list)
-
-    # Errores detallados (no metas regular aquí)
+    # Errores detallados (missing/outlier/blocked)
     fails = []
     for r in final:
-        if r.get("estado") in ("error", "outlier", "bloqueado"):
+        if r.get("source") in ("missing", "outlier", "blocked"):
             fails.append({
                 "casa": r.get("casa"),
-                "estado": r.get("estado"),
                 "source": r.get("source"),
                 "error_type": r.get("error_type"),
                 "error": r.get("error"),
@@ -416,9 +398,9 @@ async def main():
         "run_date": hoy_lima,
         "total": len(final),
 
-        "ok_scraper": len(ok_list),   # competitivo
+        "ok_scraper": len(ok_list),  # competitivo
         "regular": len(regular_list),
-        "ok_total": ok_total,
+        "ok_total": len(ok_list) + len(regular_list),
 
         "missing": len(missing_list),
         "outliers": len(outlier_list),
@@ -434,7 +416,7 @@ async def main():
         "limits": {
             "min_rate": MIN_RATE,
             "max_rate": MAX_RATE,
-            "max_spread_ok": MAX_SPREAD,
+            "max_spread_ok": MAX_SPREAD_OK,
             "max_spread_regular": MAX_SPREAD_REGULAR,
             "tol_regular": TOL_REGULAR,
             "concurrency": 15
@@ -455,6 +437,7 @@ async def main():
     else:
         sunat_mensual = await _safe_call("SUNAT", scrap_sunat(), sem, timeout_s=90)
 
+        # SUNAT: aquí NO usamos validate_and_tag_to_source (es otro payload)
         if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
             payload = {**sunat_mensual, "run_date": hoy_lima, "run_at_utc": run_at}
             with open(out_path, "w", encoding="utf-8") as f:
