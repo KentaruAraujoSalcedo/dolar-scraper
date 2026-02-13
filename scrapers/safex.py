@@ -1,8 +1,9 @@
 import os
 import json
-import asyncio
-import httpx
 from scrapers.utils import normalize_rate
+
+# Playwright async
+from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
 DEBUG = os.getenv("DEBUG_SAFEX") == "1"
 
@@ -18,97 +19,91 @@ def _debug_dump(text: str, meta: dict):
 async def scrap_safex():
     casa = "Safex"
     url = "https://www.safex.pe/"
-    endpoint = "https://www.safex.pe/cotizacion/cotizacion.php"
+    endpoint_hint = "cotizacion.php"
 
-    headers_home = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "es-PE,es;q=0.9,en;q=0.8",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-    }
-
-    # Más parecido a XHR
-    headers_api = {
-        "User-Agent": headers_home["User-Agent"],
-        "Accept-Language": headers_home["Accept-Language"],
-        "Accept": "application/json, text/plain, */*",
-        "Referer": url,
-        "Origin": url.rstrip("/"),
-        "X-Requested-With": "XMLHttpRequest",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-    }
-
-    last_payload = None
-    last_text = None
+    # Si estás en GitHub Actions con xvfb/headless, déjalo en True.
+    # Si quieres ver el navegador localmente, pon SAFEX_HEADLESS=0
+    headless = os.getenv("SAFEX_HEADLESS", "1") != "0"
 
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-            # 1) Prewarm: cargar home para cookies/sesión
-            await client.get(url, headers=headers_home)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=headless)
+            context = await browser.new_context(
+                locale="es-PE",
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                ),
+            )
+            page = await context.new_page()
 
-            # 2) Intentos al endpoint
-            for attempt in range(1, 4):
-                r = await client.get(endpoint, headers=headers_api)
-                status = r.status_code
-                final_url = str(r.url)
-                last_text = r.text or ""
+            captured_json = None
+            captured_text = None
+            captured_url = None
+            captured_status = None
 
-                # intenta JSON
-                payload = None
+            async def on_response(resp):
+                nonlocal captured_json, captured_text, captured_url, captured_status
                 try:
-                    payload = r.json()
+                    u = resp.url or ""
+                    if endpoint_hint in u:
+                        captured_url = u
+                        captured_status = resp.status
+                        # intenta leer como json
+                        try:
+                            captured_json = await resp.json()
+                        except Exception:
+                            captured_text = await resp.text()
                 except Exception:
-                    try:
-                        payload = json.loads(last_text)
-                    except Exception:
-                        payload = None
+                    pass
 
-                last_payload = payload
+            page.on("response", on_response)
 
-                # éxito esperado
-                if isinstance(payload, dict) and payload.get("response") == "success":
-                    data = payload.get("data") or {}
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+
+            # Espera un poco a que se dispare el request del endpoint
+            # (si existe). No bloquea mucho.
+            try:
+                # Espera hasta 8s por captura
+                for _ in range(16):
+                    if captured_json is not None or captured_text is not None:
+                        break
+                    await page.wait_for_timeout(500)
+            except PWTimeout:
+                pass
+
+            # 1) Si capturamos JSON del endpoint, parseamos
+            if isinstance(captured_json, dict):
+                _debug_dump(json.dumps(captured_json, ensure_ascii=False), {
+                    "casa": casa,
+                    "mode": "captured_json",
+                    "captured_url": captured_url,
+                    "captured_status": captured_status,
+                })
+
+                # Formato esperado: {'response':'success','data':{'precCompra':..., 'precVenta':...}}
+                if captured_json.get("response") == "success":
+                    data = captured_json.get("data") or {}
                     compra_raw = data.get("precCompra")
                     venta_raw  = data.get("precVenta")
 
                     compra = normalize_rate(str(compra_raw)) if compra_raw is not None else None
                     venta  = normalize_rate(str(venta_raw)) if venta_raw is not None else None
 
-                    cerrado = (compra is None and venta is None) or (compra == 0.0 and venta == 0.0)
+                    if compra is not None and venta is not None:
+                        cerrado = (compra == 0.0 and venta == 0.0)
+                        await browser.close()
+                        return {
+                            "casa": casa,
+                            "url": url,
+                            "compra": compra,
+                            "venta": venta,
+                            "estado": "cerrado" if cerrado else "abierto",
+                            "source": "playwright",
+                        }
 
-                    return {
-                        "casa": casa,
-                        "url": url,
-                        "compra": compra,
-                        "venta": venta,
-                        "estado": "cerrado" if cerrado else "abierto",
-                    }
-
-                # si devuelve error4, es señal de falta de sesión / bloqueo: reintenta con backoff
-                if isinstance(payload, dict) and payload.get("response") == "error4":
-                    _debug_dump(last_text, {
-                        "casa": casa,
-                        "attempt": attempt,
-                        "status_code": status,
-                        "final_url": final_url,
-                        "reason": "error4",
-                        "payload": payload,
-                    })
-                    await asyncio.sleep(0.35 * attempt)
-                    continue
-
-                # cualquier otra cosa inesperada: no sigas pegando mucho
-                _debug_dump(last_text, {
-                    "casa": casa,
-                    "attempt": attempt,
-                    "status_code": status,
-                    "final_url": final_url,
-                    "reason": "unexpected_payload",
-                    "payload": payload,
-                })
+                # Si no fue success, igual lo reportamos con detalle
+                await browser.close()
                 return {
                     "casa": casa,
                     "url": url,
@@ -116,27 +111,66 @@ async def scrap_safex():
                     "venta": None,
                     "estado": "error",
                     "error_type": "api_unexpected",
-                    "error": f"Respuesta inesperada: status={status} payload={payload!r}",
+                    "source": "playwright",
+                    "error": f"Endpoint respondió JSON inesperado. status={captured_status} payload={captured_json!r}",
                 }
 
-        # si salió del loop por error4 repetido
-        return {
-            "casa": casa,
-            "url": url,
-            "compra": None,
-            "venta": None,
-            "estado": "error",
-            "error_type": "blocked_or_session",
-            "error": f"Safex devolvió error4 tras reintentos. payload={last_payload!r}",
-        }
+            # 2) Si capturamos texto (no JSON), lo guardamos como evidencia
+            if captured_text:
+                _debug_dump(captured_text, {
+                    "casa": casa,
+                    "mode": "captured_text",
+                    "captured_url": captured_url,
+                    "captured_status": captured_status,
+                })
+
+            # 3) Fallback DOM (por si el endpoint no existe o cambió)
+            # Intenta encontrar números cerca de "Compra" y "Venta" en la página.
+            # (Los selectores exactos dependen del DOM; esto es fallback suave.)
+            content = await page.content()
+            _debug_dump(content[:2000], {"casa": casa, "mode": "dom_fallback_snip"})
+
+            # Busca en el contenido completo con regex simple
+            import re
+            buy_m = re.search(r"compra.{0,120}?(\d[.,]\d{2,4})", content, re.IGNORECASE | re.DOTALL)
+            sel_m = re.search(r"venta.{0,120}?(\d[.,]\d{2,4})",  content, re.IGNORECASE | re.DOTALL)
+
+            buy = buy_m.group(1) if buy_m else None
+            sel = sel_m.group(1) if sel_m else None
+
+            compra = normalize_rate(str(buy).replace(",", ".")) if buy else None
+            venta  = normalize_rate(str(sel).replace(",", ".")) if sel else None
+
+            await browser.close()
+
+            if compra is not None and venta is not None:
+                cerrado = (compra == 0.0 and venta == 0.0)
+                return {
+                    "casa": casa,
+                    "url": url,
+                    "compra": compra,
+                    "venta": venta,
+                    "estado": "cerrado" if cerrado else "abierto",
+                    "source": "playwright_dom",
+                }
+
+            return {
+                "casa": casa,
+                "url": url,
+                "compra": None,
+                "venta": None,
+                "estado": "error",
+                "error_type": "parse_error",
+                "source": "playwright",
+                "error": "No se pudo capturar cotizacion.php ni extraer compra/venta del DOM.",
+            }
 
     except Exception as e:
-        _debug_dump(last_text or "", {
+        _debug_dump("", {
             "casa": casa,
-            "reason": "exception",
+            "mode": "exception",
             "exception_type": type(e).__name__,
             "exception_message": str(e),
-            "last_payload": last_payload,
         })
         return {
             "casa": casa,
@@ -147,5 +181,5 @@ async def scrap_safex():
             "error_type": "error",
             "exception_type": type(e).__name__,
             "exception_message": str(e),
-            "error": f"No se pudo scrapear: {e}",
+            "error": f"No se pudo scrapear (playwright): {e}",
         }
