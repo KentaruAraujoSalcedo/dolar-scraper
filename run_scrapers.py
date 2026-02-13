@@ -139,7 +139,9 @@ def validate_and_tag(item: dict) -> dict:
         item["estado"] = "outlier"
         item["source"] = "outlier"
         item["error_type"] = "outlier_spread_high"
-        item["error"] = f"outlier_spread_high spread={spread:.6f} (max {MAX_SPREAD_REGULAR}) compra={c} venta={v}"
+        item["error"] = (
+            f"outlier_spread_high spread={spread:.6f} (max {MAX_SPREAD_REGULAR}) compra={c} venta={v}"
+        )
         # acá NO nuleo por defecto; si quieres ocultarlo, descomenta:
         # item["compra"] = None; item["venta"] = None
         return item
@@ -344,8 +346,8 @@ async def main():
         # 1) Etiqueta por tasas (ok/regular/outlier/error)
         r = validate_and_tag(r)
 
-        # 2) Si no quedó estado (porque el item venía raro), lo derivamos del source
-        if not r.get("estado"):
+        # 2) Normaliza estado SIEMPRE (esto arregla tu meta)
+        if r.get("estado") is None:
             src = r.get("source")
             if src == "scraper":
                 r["estado"] = "ok"
@@ -358,8 +360,10 @@ async def main():
             elif src in ("blocked", "cloudflare"):
                 r["estado"] = "bloqueado"
                 r["source"] = "blocked"
+            else:
+                r["estado"] = "ok" if (r.get("compra") is not None and r.get("venta") is not None) else "error"
 
-        # 3) Cloudflare explícito
+        # 3) Cloudflare explícito (si algún scraper pone source=cloudflare)
         if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
@@ -384,13 +388,13 @@ async def main():
         json.dump(final, f, ensure_ascii=False, indent=2)
     print("✅ Tasas guardadas en data/tasas.json")
 
+    # ✅ conteos y listas (basado en estado, ya corregido)
     ok_list = [r["casa"] for r in final if r.get("estado") == "ok"]
     regular_list = [r["casa"] for r in final if r.get("estado") == "regular"]
     missing_list = [r["casa"] for r in final if r.get("estado") == "error" and r.get("source") == "missing"]
     outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier"]
     blocked_list = [r["casa"] for r in final if r.get("estado") == "bloqueado"]
 
-    ok_scraper = len(ok_list)  # si quieres mantener el nombre
     ok_total = len(ok_list) + len(regular_list)
 
     # Errores detallados (no metas regular aquí)
@@ -416,9 +420,9 @@ async def main():
         "total": len(final),
 
         # ✅ métricas
-        "ok_scraper": len(ok_list),                 # solo top competitivo
-        "regular": len(regular_list),               # válido pero caro
-        "ok_total": len(ok_list) + len(regular_list),
+        "ok_scraper": len(ok_list),  # competitivo
+        "regular": len(regular_list),
+        "ok_total": ok_total,
 
         "missing": len(missing_list),
         "outliers": len(outlier_list),
