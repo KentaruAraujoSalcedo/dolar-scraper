@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       PLAYWRIGHT_BROWSERS_PATH: 0
       TUCAMBISTA_OCP_KEY: ${{ secrets.TUCAMBISTA_OCP_KEY }}
@@ -28,10 +28,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Playwright Chromium + deps
+      - name: Install Playwright Chromium
         run: |
           python -m playwright --version
-          python -m playwright install --with-deps chromium
+          python -m playwright install chromium
 
       # ✅ Solo borra lo que siempre se regenera en cada run
       - name: Clean previous output
