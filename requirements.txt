@@ -1,4 +1,4 @@
 httpx
 playwright
 beautifulsoup4
-cloudscraper
+
