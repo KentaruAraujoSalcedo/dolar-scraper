@@ -70,7 +70,6 @@ MAX_RATE = 3.60
 MAX_SPREAD = 0.05          # "ok" competitivo
 MAX_SPREAD_REGULAR = 0.12  # "regular" (válido pero caro)
 
-
 def _is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
@@ -134,8 +133,9 @@ def validate_and_tag(item: dict) -> dict:
         item["compra"] = None
         item["venta"] = None
         return item
-
-    if spread > MAX_SPREAD_REGULAR:
+    
+    TOL_REGULAR = 0.001  # o 0.001 si quieres tolerancia real
+    if spread > (MAX_SPREAD_REGULAR + TOL_REGULAR):
         item["estado"] = "outlier"
         item["source"] = "outlier"
         item["error_type"] = "outlier_spread_high"
@@ -341,46 +341,59 @@ async def main():
     resultados = await asyncio.gather(*coros)
     resultados = [r for r in resultados if isinstance(r, dict) and r.get("casa")]
 
-    final = []
-    for r in resultados:
-        # 1) Etiqueta por tasas (ok/regular/outlier/error)
-        r = validate_and_tag(r)
+final = []
+for r in resultados:
+    # 1) Etiqueta por tasas (ok/regular/outlier/error)
+    r = validate_and_tag(r)
 
-        # 2) Normaliza estado SIEMPRE (esto arregla tu meta)
-        if r.get("estado") is None:
-            src = r.get("source")
-            if src == "scraper":
-                r["estado"] = "ok"
-            elif src == "regular":
-                r["estado"] = "regular"
-            elif src == "outlier":
-                r["estado"] = "outlier"
-            elif src == "missing":
-                r["estado"] = "error"
-            elif src in ("blocked", "cloudflare"):
-                r["estado"] = "bloqueado"
-                r["source"] = "blocked"
-            else:
-                r["estado"] = "ok" if (r.get("compra") is not None and r.get("venta") is not None) else "error"
-
-        # 3) Cloudflare explícito (si algún scraper pone source=cloudflare)
-        if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
+    # 2) Si no quedó estado (porque el item venía raro), lo derivamos del source
+    if r.get("estado") is None:
+        src = r.get("source")
+        if src == "scraper":
+            r["estado"] = "ok"
+        elif src == "regular":
+            r["estado"] = "regular"
+        elif src == "outlier":
+            r["estado"] = "outlier"
+        elif src == "missing":
+            r["estado"] = "error"
+        elif src in ("blocked", "cloudflare"):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
-            r["error_type"] = "blocked_cloudflare"
-            r.setdefault("error", "cloudflare_blocked_or_challenge")
+        else:
+            r["estado"] = "ok" if (r.get("compra") is not None and r.get("venta") is not None) else "error"
 
-        # 4) Si es error/bloqueado y no tiene error_type, clasifica
-        if r.get("estado") in ("error", "bloqueado") and not r.get("error_type"):
-            err = r.get("error") or r.get("scraper_error") or ""
-            r["error_type"] = classify_error(err)
+    # 3) Cloudflare explícito
+    if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
+        r["estado"] = "bloqueado"
+        r["source"] = "blocked"
+        r["error_type"] = "blocked_cloudflare"
+        r.setdefault("error", "cloudflare_blocked_or_challenge")
 
-        # 5) Normaliza blocked_* a bloqueado/blocked
-        if str(r.get("error_type", "")).startswith("blocked"):
-            r["estado"] = "bloqueado"
-            r["source"] = "blocked"
+    # 4) Si es error/bloqueado y no tiene error_type, clasifica
+    if r.get("estado") in ("error", "bloqueado") and not r.get("error_type"):
+        err = r.get("error") or r.get("scraper_error") or ""
+        r["error_type"] = classify_error(err)
 
-        final.append(r)
+    # 5) Normaliza blocked_* a bloqueado/blocked
+    if str(r.get("error_type", "")).startswith("blocked"):
+        r["estado"] = "bloqueado"
+        r["source"] = "blocked"
+
+    # 6) Normaliza source final según estado (override de "playwright", "api", etc.)
+    estado = r.get("estado")
+    if estado == "ok":
+        r["source"] = "scraper"
+    elif estado == "regular":
+        r["source"] = "regular"
+    elif estado == "outlier":
+        r["source"] = "outlier"
+    elif estado == "bloqueado":
+        r["source"] = "blocked"
+    elif estado == "error":
+        r.setdefault("source", "missing")
+
+    final.append(r)
 
     os.makedirs("data", exist_ok=True)
 
