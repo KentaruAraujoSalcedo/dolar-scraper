@@ -96,8 +96,12 @@ def validate_and_tag_to_source(item: dict) -> dict:
       - source: scraper / regular / outlier / missing / blocked
     Nota: NO dependemos de `estado` para nada.
     """
-    # Si ya viene marcado como blocked por el scraper, respétalo
-    if item.get("source") in ("blocked", "cloudflare"):
+
+    # Respeta blocked SIEMPRE (aunque no tenga compra/venta)
+    if (
+        item.get("source") == "blocked"
+        or str(item.get("error_type", "")).startswith("blocked")
+    ):
         item["source"] = "blocked"
         return item
 
