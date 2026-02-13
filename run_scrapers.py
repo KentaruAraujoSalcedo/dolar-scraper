@@ -352,12 +352,13 @@ async def main():
         r = validate_and_tag(r)
 
         # Si es OK, asegúrate que tenga estado=ok
-        if r.get("source") == "scraper" and r.get("estado") in (None, "", "scraper"):
+        if r.get("source") == "scraper" and r.get("estado") not in ("outlier", "error", "bloqueado"):
             r["estado"] = "ok"
 
         # Si es cloudflare con null/null => bloqueado cloudflare
         if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
             r["estado"] = "bloqueado"
+            r["source"] = "blocked"
             r["error_type"] = "blocked_cloudflare"
             r.setdefault("error", "cloudflare_blocked_or_challenge")
 
