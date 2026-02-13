@@ -89,61 +89,77 @@ def fix_inverted_compra_venta(item: dict) -> dict:
         item["swapped"] = True
     return item
 
-
 def validate_and_tag(item: dict) -> dict:
     """
-    Aplica reglas de sanidad y etiqueta:
-    - estado: ok / error / outlier / bloqueado
-    - source: scraper / missing / outlier / blocked
+    Etiquetas:
+    - estado: ok / regular / outlier / error / bloqueado
+    - source: scraper / regular / outlier / missing / blocked
     """
     c = item.get("compra")
     v = item.get("venta")
 
+    # 1) No hay números => error real
     if not is_valid_rate(item):
         item.setdefault("estado", "error")
         item.setdefault("source", "missing")
         item.setdefault("error", item.get("error") or "missing compra/venta")
         return item
 
-    # Normaliza invertido si aplica
+    # 2) Normaliza invertido si aplica
     item = fix_inverted_compra_venta(item)
     c = item.get("compra")
     v = item.get("venta")
 
-    # Reglas de rango
+    # 3) Rango absurdo => outlier "malo" (probable bug) => sí nullear
     if not (MIN_RATE <= c <= MAX_RATE) or not (MIN_RATE <= v <= MAX_RATE):
         item["estado"] = "outlier"
         item["source"] = "outlier"
+        item["error_type"] = "outlier_range"
         item["error"] = f"outlier_range compra={c} venta={v} (expected {MIN_RATE}-{MAX_RATE})"
-        # Si quieres ocultarlo del front, lo puedes nullear:
         item["compra"] = None
         item["venta"] = None
         return item
 
-    # Spread máximo
+    # 4) Spread
     spread = v - c
     item["spread"] = round(spread, 6)
+
     if spread < 0:
-        # ya debió corregirse con swapped, pero por si acaso
+        # ya debió corregirse, pero por sanidad
         item["estado"] = "error"
         item["source"] = "missing"
+        item["error_type"] = "negative_spread"
         item["error"] = f"negative_spread compra={c} venta={v}"
         item["compra"] = None
         item["venta"] = None
         return item
 
-    if spread > MAX_SPREAD:
+    # 🔥 NUEVO: 2 umbrales
+    MAX_SPREAD_OK = MAX_SPREAD          # ej 0.05 (top competitivo)
+    MAX_SPREAD_REGULAR = 0.12           # ej 0.12 (tasa real pero cara)
+
+    if spread > MAX_SPREAD_REGULAR:
+        # demasiado raro => outlier fuerte (probable lectura mala o tarifa rarísima)
         item["estado"] = "outlier"
         item["source"] = "outlier"
-        item["error"] = f"outlier_spread spread={spread:.6f} (max {MAX_SPREAD}) compra={c} venta={v}"
-        item["compra"] = None
-        item["venta"] = None
+        item["error_type"] = "outlier_spread_high"
+        item["error"] = f"outlier_spread_high spread={spread:.6f} (max {MAX_SPREAD_REGULAR}) compra={c} venta={v}"
+        # aquí puedes decidir nullear o no:
+        # yo lo dejaría visible, pero marcado. Si quieres ocultarlo:
+        # item["compra"] = None; item["venta"] = None
+        return item
+
+    if spread > MAX_SPREAD_OK:
+        # tasa real pero poco competitiva => NO es error, NO nullear
+        item["estado"] = "regular"
+        item["source"] = "regular"
+        item["error_type"] = "spread_alto"
+        item["error"] = f"spread_alto spread={spread:.6f} (ok<= {MAX_SPREAD_OK}) compra={c} venta={v}"
         return item
 
     item.setdefault("estado", "ok")
     item.setdefault("source", "scraper")
     return item
-
 
 def classify_error(err: str) -> str:
     """
