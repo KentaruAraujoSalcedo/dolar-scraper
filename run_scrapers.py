@@ -341,38 +341,37 @@ async def main():
 
     final = []
     for r in resultados:
-        # 1) Etiquetado por tasas (ok/regular/outlier/error)
+        # 1) Etiqueta por tasas (ok/regular/outlier/error)
         r = validate_and_tag(r)
 
-        # Si el scraper trajo source "técnico" (playwright, api, etc),
-        # normaliza a lo que diga validate_and_tag (scraper/regular/outlier/missing)
-        # y si no existe estado, asígnalo coherente.
+        # 2) Si no quedó estado (porque el item venía raro), lo derivamos del source
         if not r.get("estado"):
-            if r.get("source") == "scraper":
+            src = r.get("source")
+            if src == "scraper":
                 r["estado"] = "ok"
-            elif r.get("source") == "regular":
+            elif src == "regular":
                 r["estado"] = "regular"
-            elif r.get("source") == "outlier":
+            elif src == "outlier":
                 r["estado"] = "outlier"
-            elif r.get("source") == "missing":
+            elif src == "missing":
                 r["estado"] = "error"
-            elif r.get("source") in ("blocked", "cloudflare"):
+            elif src in ("blocked", "cloudflare"):
                 r["estado"] = "bloqueado"
                 r["source"] = "blocked"
 
-        # 2) Cloudflare explícito (si algún scraper pone source=cloudflare)
+        # 3) Cloudflare explícito
         if r.get("source") == "cloudflare" and (r.get("compra") is None or r.get("venta") is None):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
             r["error_type"] = "blocked_cloudflare"
             r.setdefault("error", "cloudflare_blocked_or_challenge")
 
-        # 3) Si es error/bloqueado sin error_type, clasifica
+        # 4) Si es error/bloqueado y no tiene error_type, clasifica
         if r.get("estado") in ("error", "bloqueado") and not r.get("error_type"):
             err = r.get("error") or r.get("scraper_error") or ""
             r["error_type"] = classify_error(err)
 
-        # 4) Normaliza cualquier blocked_* a estado/source blocked
+        # 5) Normaliza blocked_* a bloqueado/blocked
         if str(r.get("error_type", "")).startswith("blocked"):
             r["estado"] = "bloqueado"
             r["source"] = "blocked"
@@ -387,9 +386,12 @@ async def main():
 
     ok_list = [r["casa"] for r in final if r.get("estado") == "ok"]
     regular_list = [r["casa"] for r in final if r.get("estado") == "regular"]
+    missing_list = [r["casa"] for r in final if r.get("estado") == "error" and r.get("source") == "missing"]
     outlier_list = [r["casa"] for r in final if r.get("estado") == "outlier"]
     blocked_list = [r["casa"] for r in final if r.get("estado") == "bloqueado"]
-    missing_list = [r["casa"] for r in final if r.get("estado") == "error" and r.get("source") == "missing"]
+
+    ok_scraper = len(ok_list)  # si quieres mantener el nombre
+    ok_total = len(ok_list) + len(regular_list)
 
     # Errores detallados (no metas regular aquí)
     fails = []
