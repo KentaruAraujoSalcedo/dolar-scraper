@@ -344,6 +344,13 @@ async def main():
         # 1) Clasificación FINAL (scraper/regular/outlier/missing/blocked)
         r = validate_and_tag_to_source(r)
 
+        # Si el scraper devolvió "No se pudo scrapear: " sin detalle, casi siempre es timeout/cancel
+        if r.get("source") == "missing":
+            err = (r.get("error") or "").strip()
+            if err in ("No se pudo scrapear:", "No se pudo scrapear:"):
+                r["error_type"] = "timeout"
+                r["error"] = "timeout_or_cancelled_without_message"
+
         # 2) Si quedó missing y no tiene error_type, clasifica por mensaje (útil para meta)
         if r.get("source") == "blocked" and not r.get("error_type"):
             r["error_type"] = classify_error(r.get("error") or "blocked")
