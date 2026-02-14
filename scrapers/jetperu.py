@@ -1,19 +1,18 @@
+import re
 import time
 import json
 import base64
 import httpx
 from scrapers.utils import normalize_rate
 
-# Cache simple en memoria (sirve perfecto si tu run_scrapers corre en un solo proceso)
 _JETPERU_TOKEN = {"value": None, "exp": 0}
 
 def _jwt_exp(jwt: str) -> int:
-    """Devuelve exp (epoch seconds) del JWT. Si falla, 0."""
     try:
         parts = jwt.split(".")
         if len(parts) < 2:
             return 0
-        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)  # padding
+        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
         payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode("utf-8")))
         return int(payload.get("exp", 0))
     except Exception:
@@ -21,25 +20,22 @@ def _jwt_exp(jwt: str) -> int:
 
 async def _get_jetperu_token(client: httpx.AsyncClient) -> str:
     now = int(time.time())
-    # refresca 60s antes de expirar
     if _JETPERU_TOKEN["value"] and (_JETPERU_TOKEN["exp"] - 60) > now:
         return _JETPERU_TOKEN["value"]
 
     ajax_url = "https://jetperu.com.pe/wp-admin/admin-ajax.php"
-
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
         "Referer": "https://jetperu.com.pe/cambiar-dinero/",
         "X-Requested-With": "XMLHttpRequest",
         "Accept": "*/*",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }
 
-    # lo que capturaste:
-    data = {"action": "tc_token"}
-
-    r = await client.post(ajax_url, headers=headers, data=data)
+    r = await client.post(ajax_url, headers=headers, data={"action": "tc_token"})
     r.raise_for_status()
 
     j = r.json()
@@ -51,13 +47,42 @@ async def _get_jetperu_token(client: httpx.AsyncClient) -> str:
     exp = _jwt_exp(token)
 
     _JETPERU_TOKEN["value"] = token
-    _JETPERU_TOKEN["exp"] = exp if exp else (int(time.time()) + 10 * 60)  # fallback 10 min
-
+    _JETPERU_TOKEN["exp"] = exp if exp else (int(time.time()) + 10 * 60)
     return token
+
+
+def _extract_widget_rates_if_present(html: str):
+    """
+    OJO: normalmente estos spans vienen VACÍOS y se llenan con JS.
+    Solo sirve si alguna vez el HTML ya trae números (poco común).
+    """
+    h = html or ""
+
+    buy = re.search(
+        r'<span[^>]*\bid\s*=\s*[\'"]buyRate[\'"][^>]*>\s*([0-9]+[.,][0-9]{3,4})\s*</span>',
+        h, re.I
+    )
+    sell = re.search(
+        r'<span[^>]*\bid\s*=\s*[\'"]sellRate[\'"][^>]*>\s*([0-9]+[.,][0-9]{3,4})\s*</span>',
+        h, re.I
+    )
+
+    buy_raw = buy.group(1) if buy else None
+    sell_raw = sell.group(1) if sell else None
+
+    compra = normalize_rate(buy_raw) if buy_raw else None
+    venta = normalize_rate(sell_raw) if sell_raw else None
+    return compra, venta
+
+
+def _pick_item(items: list, moneda_id: str):
+    return next((it for it in items if isinstance(it, dict) and it.get("monedaDestinoId") == moneda_id), None)
+
 
 async def scrap_jetperu():
     casa = "JetPeru"
     url = "https://jetperu.com.pe/cambiar-dinero/"
+
     endpoint = "https://apitc.jetperu.com.pe:5002/api/WebTipoCambio"
     params = {"monedaOrigenId": "PEN"}
 
@@ -65,11 +90,29 @@ async def scrap_jetperu():
 
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            # 1) Intento HTML (opcional; casi siempre vacío)
+            page = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            page.raise_for_status()
+
+            compra_html, venta_html = _extract_widget_rates_if_present(page.text)
+            if compra_html is not None and venta_html is not None:
+                return {
+                    "casa": casa,
+                    "url": url,
+                    "compra": compra_html,
+                    "venta": venta_html,
+                    "estado": "abierto",
+                    "source": "html_widget_buyRate_sellRate",
+                }
+
+            # 2) ✅ Fuente real: API + token
             token = await _get_jetperu_token(client)
 
             headers_api = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                              "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                ),
                 "Referer": "https://jetperu.com.pe/",
                 "Accept": "application/json, text/javascript, */*; q=0.01",
                 "Authorization": f"Bearer {token}",
@@ -81,50 +124,44 @@ async def scrap_jetperu():
 
         if not isinstance(data, dict) or not data.get("exito"):
             return {
-                "casa": casa,
-                "url": url,
-                "compra": None,
-                "venta": None,
+                "casa": casa, "url": url,
+                "compra": None, "venta": None,
                 "estado": "error",
-                "error": "Respuesta inesperada del API (exito != true).",
+                "source": "api_WebTipoCambio",
+                "error": "API exito != true",
             }
 
         items = data.get("dato") or []
         if not isinstance(items, list) or not items:
             return {
-                "casa": casa,
-                "url": url,
-                "compra": None,
-                "venta": None,
+                "casa": casa, "url": url,
+                "compra": None, "venta": None,
                 "estado": "error",
-                "error": "Respuesta inesperada del API (dato vacío).",
+                "source": "api_WebTipoCambio",
+                "error": "API dato vacío",
             }
 
-        usd = next((it for it in items if it.get("monedaDestinoId") == "USD"), None)
-        if not usd:
+        # ✅ Primero USDO (online = lo que muestra el widget)
+        it = _pick_item(items, "USDO") or _pick_item(items, "USD")
+        if not it:
             return {
-                "casa": casa,
-                "url": url,
-                "compra": None,
-                "venta": None,
+                "casa": casa, "url": url,
+                "compra": None, "venta": None,
                 "estado": "error",
-                "error": "No se encontró registro USD en la respuesta.",
+                "source": "api_WebTipoCambio",
+                "error": "No USDO ni USD en API",
             }
 
-        compra_raw = usd.get("tipoCompra")
-        venta_raw  = usd.get("tipoVenta")
-
-        compra = normalize_rate(str(compra_raw)) if compra_raw is not None else None
-        venta  = normalize_rate(str(venta_raw)) if venta_raw is not None else None
-
-        cerrado = (compra is None and venta is None) or (compra == 0.0 and venta == 0.0)
+        compra = normalize_rate(str(it.get("tipoCompra"))) if it.get("tipoCompra") is not None else None
+        venta  = normalize_rate(str(it.get("tipoVenta"))) if it.get("tipoVenta") is not None else None
 
         return {
             "casa": casa,
             "url": url,
             "compra": compra,
             "venta": venta,
-            "estado": "cerrado" if cerrado else "abierto",
+            "estado": "abierto" if (compra is not None and venta is not None) else "error",
+            "source": f"api_WebTipoCambio_{it.get('monedaDestinoId')}",
         }
 
     except Exception as e:
@@ -134,5 +171,6 @@ async def scrap_jetperu():
             "compra": None,
             "venta": None,
             "estado": "error",
+            "source": "missing",
             "error": f"No se pudo scrapear: {e}",
         }
