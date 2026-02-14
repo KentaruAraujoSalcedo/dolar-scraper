@@ -249,12 +249,15 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
             err_msg = str(e) or "exception_no_message"
             err_type = classify_error(err_msg)
 
+            # ✅ si es bloqueo, marca source como blocked desde aquí
+            src = "blocked" if str(err_type).startswith("blocked") else "missing"
+
             return {
                 "casa": name,
                 "url": None,
                 "compra": None,
                 "venta": None,
-                "source": "missing",
+                "source": src,  # 👈 cambio clave
                 "elapsed_ms": elapsed_ms,
                 "error": err_msg,
                 "error_type": err_type,
@@ -263,7 +266,6 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
                 "status_code": status_code,
                 "traceback_last_lines": tb_lines[-8:],
             }
-
 
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
