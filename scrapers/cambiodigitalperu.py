@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_cambiodigitalperu():
-    casa = "CambioDigitalPeru"
+    casa = "cambiodigitalperu"
     url = "https://cambiodigitalperu.com"
     endpoint = "https://cambiodigital.pseperu.pro/api/exchange-rates/last-exchange-rate"
 
