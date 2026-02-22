@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_cambiafx():
-    casa = "CambiaFX"
+    casa = "cambiafx"
     url = "https://cambiafx.pe/"
     endpoint = "https://apiluna.cambiafx.pe/api/BackendPizarra/getTcCustomerNoAuth"
     params = {"idParCurrency": "1"}  # 1 = USD/PEN (según el endpoint que encontramos)
