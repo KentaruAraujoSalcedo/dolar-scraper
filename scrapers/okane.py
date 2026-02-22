@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from scrapers.utils import normalize_rate
 
 async def scrap_okane():
-    casa = "OkaneCambioDigital"
+    casa = "okane"
     url = "https://okanecambiodigital.com/"
     endpoint = "https://okanecambiodigital.com/backend_apigateway/v1/tipoDeCambio"
 
