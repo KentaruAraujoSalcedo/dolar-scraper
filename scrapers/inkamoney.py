@@ -5,7 +5,7 @@ from scrapers.utils import normalize_rate
 CSRF_RE = re.compile(r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']', re.I)
 
 async def scrap_inkamoney():
-    casa = "InkaMoney"
+    casa = "inkamoney"
     url = "https://inkamoney.com/"
     endpoint = "https://inkamoney.com/convert"
 
