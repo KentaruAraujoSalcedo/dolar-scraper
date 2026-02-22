@@ -5,7 +5,7 @@ from scrapers.utils import normalize_rate
 TOKEN_RE = re.compile(r'__RequestVerificationToken[^>]*value=["\']([^"\']+)["\']', re.I)
 
 async def scrap_westernunion():
-    casa = "WesternUnion"
+    casa = "westernunion"
     url = "https://www.westernunionperu.pe/cambiodemoneda"
     endpoint = "https://www.westernunionperu.pe/cambiodemoneda/Operation/PostTipoCambio"
 
