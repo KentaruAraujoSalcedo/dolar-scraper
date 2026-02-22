@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_kallpacambios():
-    casa = "KallpaCambios"
+    casa = "kallpacambios"
     url = "https://kallpacambios.com/"
     endpoint = "https://login.kallpasab.com/WebApi/api/parametro/ListaTipoCambioActual"
 
