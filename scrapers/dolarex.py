@@ -3,7 +3,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_dolarex():
-    casa = "Dolarex"
+    casa = "dolarex"
     url = "https://dolarex.pe/"
 
     endpoints = [
