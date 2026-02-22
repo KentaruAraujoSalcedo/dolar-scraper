@@ -8,7 +8,7 @@ def _to_float(s: str) -> float:
     return float((s or "").replace(",", ".").strip())
 
 async def scrap_dichikash():
-    casa = "Dichikash"
+    casa = "dichikash"
     url = "https://dichikash.com/"
 
     headers = {
