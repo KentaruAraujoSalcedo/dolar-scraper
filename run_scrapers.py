@@ -12,7 +12,7 @@ from scrapers.acomo import scrap_acomo
 from scrapers.billex import scrap_billex
 from scrapers.cambiafx import scrap_cambiafx
 from scrapers.cambiodigitalperu import scrap_cambiodigitalperu
-from scrapers.cambiomas import scrap_cambiomas
+from scrapers.cambiosmass import scrap_cambiosmass
 from scrapers.cambiomundial import scrap_cambiomundial
 from scrapers.cambioseguro import scrap_cambioseguro
 from scrapers.cambioselgordito import scrap_cambioselgordito
@@ -57,7 +57,7 @@ from scrapers.tkambio import scrap_tkambio
 from scrapers.tucambista import scrap_tucambista
 from scrapers.vipcapitalbusiness import scrap_vipcapitalbusiness
 from scrapers.westernunion import scrap_westernunion
-from scrapers.x_cambio import scrap_x_cambio
+from scrapers.xcambio import scrap_xcambio
 from scrapers.yanki import scrap_yanki
 from scrapers.zonadolar import scrap_zonadolar
 
@@ -274,57 +274,57 @@ async def main():
     sem = asyncio.Semaphore(15)
 
     tasks = [
-        ("Acomo", scrap_acomo()),
-        ("Billex", scrap_billex()),
-        ("CambiaFX", scrap_cambiafx()),
-        ("CambioDigitalPeru", scrap_cambiodigitalperu()),
-        ("CambiosMass", scrap_cambiomas()),
-        ("CambioMundial", scrap_cambiomundial(), 80),
-        ("CambioSeguro", scrap_cambioseguro()),
-        ("Cambios El Gordito", scrap_cambioselgordito()),
-        ("CambioSol", scrap_cambiosol()),
-        ("CambioX", scrap_cambiox()),
-        ("Cambix", scrap_cambix()),
-        ("ChapaCambio", scrap_chapacambio()),
-        ("ChaskiDolar", scrap_chaskidolar()),
-        ("DefiPeru", scrap_defiperu()),
-        ("Dichikash", scrap_dichikash()),
-        ("DineKash", scrap_dinekash()),
-        ("DinersFX", scrap_dinersfx()),
-        ("Dolarex", scrap_dolarex()),
-        ("DollarHouse", scrap_dollarhouse()),
-        ("Global66", scrap_global66()),
-        ("Hirpower", scrap_hirpower()),
-        ("InkaMoney", scrap_inkamoney()),
-        ("Intercambialo", scrap_intercambialo()),
-        ("IntiCambio", scrap_inticambio()),
-        ("JetPeru", scrap_jetperu()),
-        ("KallpaCambios", scrap_kallpacambios()),
-        ("Kambio", scrap_kambio()),
-        ("Kambista", scrap_kambista()),
-        ("MarketDollar", scrap_marketdollar()),
-        ("MegaMoney", scrap_megamoney()),
-        ("MercadoCambiario", scrap_mercadocambiario()),
-        ("MidpointFX", scrap_midpointfx()),
-        ("MisterDollar", scrap_misterdollar()),
-        ("MoneyHouse", scrap_moneyhouse()),
-        ("MoneyPlus", scrap_moneyplus()),
-        ("OkaneCambioDigital", scrap_okane()),
-        ("PeruDolar", scrap_perudolar()),
-        ("Rextie", scrap_rextie()),
-        ("Rissanpe", scrap_rissanpe()),
-        ("Roblex", scrap_roblex()),
-        ("Safex", scrap_safex()),
-        ("Securex", scrap_securex()),
-        ("SmartDollar", scrap_smartdollar()),
-        ("SRcambio", scrap_srcambio()),
-        ("TKambio", scrap_tkambio()),
-        ("TuCambista", scrap_tucambista()),
-        ("VipCapital", scrap_vipcapitalbusiness()),
-        ("WesternUnion", scrap_westernunion()),
-        ("X-Cambio", scrap_x_cambio()),
-        ("Yanki", scrap_yanki()),
-        ("ZonaDolar", scrap_zonadolar()),
+        ("acomo", scrap_acomo()),
+        ("billex", scrap_billex()),
+        ("cambiafx", scrap_cambiafx()),
+        ("cambiodigitalperu", scrap_cambiodigitalperu()),
+        ("cambiosmass", scrap_cambiosmass()),
+        ("cambiomundial", scrap_cambiomundial(), 80),
+        ("cambioseguro", scrap_cambioseguro()),
+        ("cambioselgordito", scrap_cambioselgordito()),
+        ("cambiosol", scrap_cambiosol()),
+        ("cambiox", scrap_cambiox()),
+        ("cambix", scrap_cambix()),
+        ("chapacambio", scrap_chapacambio()),
+        ("chaskidolar", scrap_chaskidolar()),
+        ("defiperu", scrap_defiperu()),
+        ("dichikash", scrap_dichikash()),
+        ("dinekash", scrap_dinekash()),
+        ("dinersfx", scrap_dinersfx()),
+        ("dolarex", scrap_dolarex()),
+        ("dollarhouse", scrap_dollarhouse()),
+        ("global66", scrap_global66()),
+        ("hirpower", scrap_hirpower()),
+        ("inkamoney", scrap_inkamoney()),
+        ("intercambialo", scrap_intercambialo()),
+        ("inticambio", scrap_inticambio()),
+        ("jetperu", scrap_jetperu()),
+        ("kallpacambios", scrap_kallpacambios()),
+        ("kambio", scrap_kambio()),
+        ("kambista", scrap_kambista()),
+        ("marketdollar", scrap_marketdollar()),
+        ("megamoney", scrap_megamoney()),
+        ("mercadocambiario", scrap_mercadocambiario()),
+        ("midpointfx", scrap_midpointfx()),
+        ("misterdollar", scrap_misterdollar()),
+        ("moneyhouse", scrap_moneyhouse()),
+        ("moneyplus", scrap_moneyplus()),
+        ("okane", scrap_okane()),
+        ("perudolar", scrap_perudolar()),
+        ("rextie", scrap_rextie()),
+        ("rissanpe", scrap_rissanpe()),
+        ("roblex", scrap_roblex()),
+        ("safex", scrap_safex()),
+        ("securex", scrap_securex()),
+        ("smartdollar", scrap_smartdollar()),
+        ("srcambio", scrap_srcambio()),
+        ("tkambio", scrap_tkambio()),
+        ("tucambista", scrap_tucambista()),
+        ("vipcapital", scrap_vipcapitalbusiness()),
+        ("westernunion", scrap_westernunion()),
+        ("xcambio", scrap_xcambio()),
+        ("yanki", scrap_yanki()),
+        ("zonadolar", scrap_zonadolar()),
     ]
 
     coros = []
