@@ -3,7 +3,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 URL = "https://perudolar.pe/"
-CASA = "PeruDolar"
+CASA = "perudolar"
 
 # 1) extractor dirigido al bloque correcto (según tu screenshot)
 PRECIOS_HOME_RE = re.compile(
