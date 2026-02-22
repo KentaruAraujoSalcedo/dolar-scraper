@@ -1,7 +1,7 @@
 import httpx
 
 async def scrap_hirpower():
-    casa = "Hirpower"
+    casa = "hirpower"
     url = "https://www.hirpower.com/"
     endpoint = "https://www.hirpower.com/config/getconfig"
 
