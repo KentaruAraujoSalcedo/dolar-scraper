@@ -320,7 +320,7 @@ async def main():
         ("srcambio", scrap_srcambio()),
         ("tkambio", scrap_tkambio()),
         ("tucambista", scrap_tucambista()),
-        ("vipcapital", scrap_vipcapitalbusiness()),
+        ("vipcapital", scrap_vipcapital()),
         ("westernunion", scrap_westernunion()),
         ("xcambio", scrap_xcambio()),
         ("yanki", scrap_yanki()),
