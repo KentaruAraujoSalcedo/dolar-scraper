@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_roblex():
-    casa = "Roblex"
+    casa = "roblex"
     url = "https://roblex.pe/"
 
     base = "https://operations.roblex.pe"
