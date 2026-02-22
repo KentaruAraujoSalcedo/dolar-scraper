@@ -3,7 +3,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_cambix():
-    casa = "Cambix"
+    casa = "cambix"
     url = "https://cambix.com.pe/"
     endpoint = "https://apibcprod01.azure-api.net/cambix/v2/exchange-rates/exchange-rate"
     params = {"typeCode": "TC", "documentNumber": "null"}
