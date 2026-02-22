@@ -25,7 +25,7 @@ def _calc_rate_pen_per_usd(origin_amount: float, dest_amount: float) -> float | 
     return float(origin_amount) / float(dest_amount)
 
 async def scrap_global66():
-    casa = "Global66"
+    casa = "global66"
     url = "https://www.global66.com/pe/envios-de-dinero/"
     payment_type = "WIRE_TRANSFER"  # puedes estandarizar esto
     amount_pen = 1000               # monto estándar para cotizar
