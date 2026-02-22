@@ -3,7 +3,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_tucambista():
-    casa = "TuCambista"
+    casa = "tucambista"
     url = "https://tucambista.pe/"
     endpoint_rates = "https://apim.tucambista.pe/api/rates"
     endpoint_quote = "https://apim.tucambista.pe/api/transaction/quote"
