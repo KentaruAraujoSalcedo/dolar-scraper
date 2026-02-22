@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_kambio():
-    casa = "Kambio"
+    casa = "kambio"
     url = "https://www.kambio.online/"
     endpoint = "https://kambio.com.pe/api/rates/current"
 
