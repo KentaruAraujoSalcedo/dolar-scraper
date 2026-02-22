@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_intercambialo():
-    casa = "Intercambialo"
+    casa = "intercambialo"
     url = "https://intercambialo.pe/"
     endpoint = "https://intercambialo.pe/aplicacion/getTipoCambio.php"
 
