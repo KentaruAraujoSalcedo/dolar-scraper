@@ -3,7 +3,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 URL = "https://cambiox.pe/"
-CASA = "CambioX"
+CASA = "cambiox"
 
 RATE_RE = re.compile(r"\b\d[.,]\d{3,4}\b")
 
