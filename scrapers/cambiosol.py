@@ -56,7 +56,7 @@ def _extract_buy_sell(html: str):
     return None, None
 
 async def scrap_cambiosol():
-    casa = "CambioSol"
+    casa = "cambiosol"
     url = "https://cambiosol.pe/"
 
     headers = {
