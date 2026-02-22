@@ -6,7 +6,7 @@ from scrapers.utils import normalize_rate
 META_CSRF_RE = re.compile(r'<meta\s+name="csrf-token"\s+content="([^"]+)"', re.I)
 
 async def scrap_chaskidolar():
-    casa = "ChaskiDolar"
+    casa = "chaskidolar"
     url = "https://chaskidolar.com/"
     endpoint = "https://chaskidolar.com/convert"
 
