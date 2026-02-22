@@ -42,7 +42,7 @@ def _extract_buy_sell(html: str):
     return None, None
 
 async def scrap_dollarhouse():
-    casa = "DollarHouse"
+    casa = "dollarhouse"
     url = "https://app.dollarhouse.pe/"
 
     headers = {
