@@ -85,7 +85,7 @@ async def _fetch_html_playwright(target_url: str) -> str:
 
 
 async def scrap_cambiomundial():
-    casa = "CambioMundial"
+    casa = "cambiomundial"
     url = "https://www.cambiomundial.com/"
     endpoint = "https://www.cambiomundial.com/appcm/tpc/tipocambio/index"
 
