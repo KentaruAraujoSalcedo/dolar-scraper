@@ -80,7 +80,7 @@ def _pick_item(items: list, moneda_id: str):
 
 
 async def scrap_jetperu():
-    casa = "JetPeru"
+    casa = "jetPeru"
     url = "https://jetperu.com.pe/cambiar-dinero/"
 
     endpoint = "https://apitc.jetperu.com.pe:5002/api/WebTipoCambio"
