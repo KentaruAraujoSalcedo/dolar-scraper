@@ -17,7 +17,7 @@ def _debug_dump(text: str, meta: dict):
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
 async def scrap_safex():
-    casa = "Safex"
+    casa = "safex"
     url = "https://www.safex.pe/"
     endpoint_hint = "cotizacion.php"
 
