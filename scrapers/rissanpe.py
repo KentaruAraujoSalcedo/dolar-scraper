@@ -10,7 +10,7 @@ def _clean_num(s: str) -> str:
 
 async def scrap_rissanpe():
     url = "https://www.rissanpe.com/"
-    casa = "Rissanpe"
+    casa = "rissanpe"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
