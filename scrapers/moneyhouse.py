@@ -33,7 +33,7 @@ def _extract_first_span(html: str, field_class: str) -> str | None:
 
 async def scrap_moneyhouse():
     url = "https://moneyhouse.pe/"
-    casa = "MoneyHouse"
+    casa = "moneyhouse"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
