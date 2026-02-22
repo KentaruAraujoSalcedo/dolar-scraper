@@ -29,7 +29,7 @@ def _extract_pair(html: str):
     return buy, sell
 
 async def scrap_smartdollar():
-    casa = "SmartDollar"
+    casa = "smartdollar"
     url = "https://www.smartdollar.pe/"
 
     headers = {
