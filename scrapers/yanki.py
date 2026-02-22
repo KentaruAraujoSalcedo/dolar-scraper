@@ -6,7 +6,7 @@ def _clean(txt: str) -> str:
     return re.sub(r"[^\d.,]", "", (txt or "")).replace(",", ".")
 
 async def scrap_yanki():
-    casa = "Yanki"
+    casa = "yanki"
     url = "https://yanki.pe"
     endpoint = "https://apis.yanki.pe/api/yanki/v1/tipos-cambio"
     params = {"search": "estado:actual"}
