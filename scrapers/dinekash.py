@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_dinekash():
-    casa = "DineKash"
+    casa = "dinekash"
     url = "https://dinekash.pe/"
 
     endpoint_base = "https://api.dinekash.pe/cotizacion/buscar"
