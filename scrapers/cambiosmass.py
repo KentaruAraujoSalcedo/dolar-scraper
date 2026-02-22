@@ -1,8 +1,8 @@
 import httpx
 from scrapers.utils import normalize_rate
 
-async def scrap_cambiomas():
-    casa = "CambiosMass"
+async def scrap_cambiosmass():
+    casa = "cambiossmass"
     url = "https://cambiosmass.com/"
     endpoint = "https://cambiosmass.com/api/rates-history"
 
