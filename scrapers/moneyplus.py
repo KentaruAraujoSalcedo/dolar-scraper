@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_moneyplus():
-    casa = "MoneyPlus"
+    casa = "moneyplus"
     url = "https://www.moneyplus.pe/"
     endpoint = "https://moneyplus.pseperu.pro/api/exchange-rates/last-exchange-rate"
 
