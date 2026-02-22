@@ -55,7 +55,7 @@ from scrapers.srcambio import scrap_srcambio
 from scrapers.sunat import scrap_sunat  # ✅ SOLO sunat_mensual.json
 from scrapers.tkambio import scrap_tkambio
 from scrapers.tucambista import scrap_tucambista
-from scrapers.vipcapitalbusiness import scrap_vipcapitalbusiness
+from scrapers.vipcapital import scrap_vipcapital
 from scrapers.westernunion import scrap_westernunion
 from scrapers.xcambio import scrap_xcambio
 from scrapers.yanki import scrap_yanki
