@@ -48,7 +48,7 @@ def _extract_pair(html: str):
 
 async def scrap_midpointfx():
     url = "https://www.midpointfx.com/"
-    casa = "MidpointFX"
+    casa = "midpointfx"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
