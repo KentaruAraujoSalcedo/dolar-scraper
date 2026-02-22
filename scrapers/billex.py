@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_billex():
-    casa = "Billex"
+    casa = "billex"
     url = "https://www.billex.pe/"
     endpoint = "https://apiprod.billex.pe/api/res/tcambio"
 
