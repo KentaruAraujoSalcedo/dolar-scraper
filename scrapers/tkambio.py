@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_tkambio():
-    casa = "TKambio"
+    casa = "tkambio"
     url = "https://tkambio.com/"
     endpoint = "https://tkambio.com/wp-admin/admin-ajax.php"
 
