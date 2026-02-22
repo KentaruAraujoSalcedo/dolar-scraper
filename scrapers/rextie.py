@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_rextie():
-    casa = "Rextie"
+    casa = "rextie"
     url = "https://www.rextie.com/"
     endpoint = "https://app.rextie.com/api/graphql/"
 
