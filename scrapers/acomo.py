@@ -3,7 +3,7 @@ from scrapers.utils import normalize_rate
 
 async def scrap_acomo():
     url = "https://acomo.com.pe/"
-    casa = "Acomo"
+    casa = "acomo"
     endpoint = "https://acomo.com.pe/api/current_change"
 
     headers = {
