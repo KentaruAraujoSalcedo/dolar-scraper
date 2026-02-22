@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_dinersfx():
-    casa = "DinersFX"
+    casa = "dinersfx"
     url = "https://dinersfx.pe/"
     endpoint = "https://api.dinersfx.pe/api/v1/general/rates"
 
