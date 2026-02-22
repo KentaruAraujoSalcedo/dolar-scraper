@@ -44,7 +44,7 @@ def _extract_buy_sell_from_html(html: str):
 
     return None, None, None, None
 
-async def scrap_vipcapitalbusiness():
+async def scrap_vipcapital():
     url = "https://www.vipcapitalbusiness.com/"
     casa = "vipcapital"
 
