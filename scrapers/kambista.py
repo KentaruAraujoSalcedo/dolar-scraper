@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_kambista():
-    casa = "Kambista"
+    casa = "kambista"
     url = "https://kambista.com/"
     endpoint = "https://api.kambista.com/v1/exchange/calculates"
     params = {
