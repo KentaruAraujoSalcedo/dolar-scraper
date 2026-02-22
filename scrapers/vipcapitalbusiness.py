@@ -46,7 +46,7 @@ def _extract_buy_sell_from_html(html: str):
 
 async def scrap_vipcapitalbusiness():
     url = "https://www.vipcapitalbusiness.com/"
-    casa = "VipCapital"
+    casa = "vipcapital"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
