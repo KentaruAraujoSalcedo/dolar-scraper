@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_megamoney():
-    casa = "MegaMoney"
+    casa = "megamoney"
     url = "https://megamoney.pe/"
     endpoint = "https://api.megamoney.pe/api/v1/divisas"
 
