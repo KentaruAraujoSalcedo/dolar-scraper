@@ -92,7 +92,7 @@ def _extract_rates_from_drupal_payload(payload):
 
 
 async def scrap_misterdollar():
-    casa = "MisterDollar"
+    casa = "misterdollar"
     url = "https://misterdollar.pe/"
 
     endpoint = "https://misterdollar.pe/views/ajax"
