@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_chapacambio():
-    casa = "ChapaCambio"
+    casa = "chapacambio"
     url = "https://chapacambio.com/"
     endpoint = "https://chapacambio.com/wp-json/chapacambio/tasas"
 
