@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_defiperu():
-    casa = "DefiPeru"
+    casa = "defiperu"
     url = "https://defiperu.com/change/FIAT"
     endpoint = "https://defi.frojo.dev/api/ExchangeRates/currencyType"
     params = {"currencyType": "FIAT"}
