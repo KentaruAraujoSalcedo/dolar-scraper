@@ -71,7 +71,7 @@ def _debug_dump(html: str, meta: dict):
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
 async def scrap_inticambio():
-    casa = "IntiCambio"
+    casa = "inticambio"
     url = "https://inticambio.pe/"
 
     headers = {
