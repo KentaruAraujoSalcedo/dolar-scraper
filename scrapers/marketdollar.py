@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_marketdollar():
-    casa = "MarketDollar"
+    casa = "marketdollar"
     url = "https://market-dollar.com/"
     endpoint = "https://market-dollar.com/api/exchange-rate"
 
