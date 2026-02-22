@@ -6,9 +6,9 @@ from scrapers.utils import normalize_rate
 def _clean(txt: str) -> str:
     return re.sub(r"[^\d.,]", "", (txt or "")).replace(",", ".")
 
-async def scrap_x_cambio():
+async def scrap_xcambio():
     url = "https://x-cambio.com/"
-    casa = "X-Cambio"
+    casa = "xcambio"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
