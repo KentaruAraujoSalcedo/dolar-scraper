@@ -2,7 +2,7 @@ import httpx
 from scrapers.utils import normalize_rate
 
 async def scrap_zonadolar():
-    casa = "ZonaDolar"
+    casa = "zonadolar"
     url = "https://zonadolar.pe/"
     endpoint = "https://zonadolar.pe/currencies"
 
