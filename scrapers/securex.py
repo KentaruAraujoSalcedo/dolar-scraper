@@ -60,7 +60,7 @@ def _extract_buy_sell_from_html(html: str):
 
 async def scrap_securex():
     url = "https://securex.pe/"
-    casa = "Securex"
+    casa = "securex"
 
     headers = {
         "User-Agent": (
