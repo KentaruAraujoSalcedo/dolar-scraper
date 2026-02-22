@@ -68,7 +68,7 @@ async def _pw_fetch_actives_all(home_url: str, endpoint: str):
 
 
 async def scrap_mercadocambiario():
-    casa = "MercadoCambiario"
+    casa = "mercadocambiario"
     url = "https://www.mercadocambiario.pe/"
     endpoint = "https://www.mercadocambiario.pe/api/order/get/actives-all"
 
