@@ -7,6 +7,9 @@ import traceback
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from infra.health import make_diagnostics, export_diagnostics_csv, safe_meta_errors, safe_public_result, write_action_summary
+from infra.sunat_guard import already_updated_today, load_sunat, valid_sunat, atomic_json
+
 # ===== IMPORTS DE SCRAPERS =====
 from scrapers.acomo import scrap_acomo
 from scrapers.billex import scrap_billex
@@ -177,21 +180,6 @@ def classify_error(err: str) -> str:
 
     return "error"
 
-def already_updated_today(path: str, hoy_iso: str) -> bool:
-    try:
-        if not os.path.exists(path):
-            return False
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return (
-            data.get("run_date") == hoy_iso
-            and isinstance(data.get("dias"), list)
-            and len(data["dias"]) > 0
-        )
-    except Exception:
-        return False
-
-
 async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 25):
     """
     Ejecuta un scraper con límite de concurrencia + timeout.
@@ -269,6 +257,7 @@ async def _safe_call(name: str, coro, sem: asyncio.Semaphore, timeout_s: int = 2
 
 async def main():
     run_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
+    run_id = os.getenv("GITHUB_RUN_ID")
     hoy_lima = datetime.now(ZoneInfo("America/Lima")).date().isoformat()
 
     sem = asyncio.Semaphore(15)
@@ -370,9 +359,10 @@ async def main():
 
     os.makedirs("data", exist_ok=True)
 
-    with open("data/tasas.json", "w", encoding="utf-8") as f:
-        json.dump(final, f, ensure_ascii=False, indent=2)
-    print("✅ Tasas guardadas en data/tasas.json")
+    # Publicar resultados sin trazas, credenciales ni cotizaciones descartadas.
+    public_quotes = [safe_public_result(item) for item in final]
+    atomic_json("data/tasas.json", public_quotes)
+    print("✅ Tasas públicas guardadas en data/tasas.json")
 
     # ✅ conteos y listas (SOLO POR source)
     ok_list = [r["casa"] for r in final if r.get("source") == "scraper"]
@@ -381,25 +371,13 @@ async def main():
     outlier_list = [r["casa"] for r in final if r.get("source") == "outlier"]
     blocked_list = [r["casa"] for r in final if r.get("source") == "blocked"]
 
-    # Errores detallados (missing/outlier/blocked)
-    fails = []
-    for r in final:
-        if r.get("source") in ("missing", "outlier", "blocked"):
-            fails.append({
-                "casa": r.get("casa"),
-                "source": r.get("source"),
-                "error_type": r.get("error_type"),
-                "error": r.get("error"),
-                "status_code": r.get("status_code"),
-                "elapsed_ms": r.get("elapsed_ms"),
-                "exception_type": r.get("exception_type"),
-                "exception_message": r.get("exception_message"),
-                "traceback_last_lines": r.get("traceback_last_lines"),
-            })
+    # No publicar mensajes de excepción o tracebacks en meta.json / KV.
+    fails = safe_meta_errors(final)
 
     meta = {
         "run_at_utc": run_at,
         "run_date": hoy_lima,
+        "run_id": run_id,
         "total": len(final),
 
         "ok_scraper": len(ok_list),  # competitivo
@@ -427,39 +405,65 @@ async def main():
         }
     }
 
-    with open("data/meta.json", "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
-    print("🧾 Meta guardada en data/meta.json")
+    atomic_json("data/meta.json", meta)
+    print("🧾 Meta pública guardada en data/meta.json")
 
-    # ===============================
-    # ✅ SUNAT MENSUAL (separado)
-    # ===============================
+    # SUNAT se mantiene en su clave actual de KV, pero NUNCA se reemplaza
+    # con dias=[] si falla una extracción. Cada ejecución deja diagnóstico.
     out_path = "data/sunat_mensual.json"
+    cached = load_sunat(out_path)
+    sunat_status = {"estado": "sin_datos", "actualizado": False, "dias": 0, "mes": None}
 
     if already_updated_today(out_path, hoy_lima):
-        print("✅ SUNAT mensual ya fue actualizado hoy. Skipping.")
+        print("✅ SUNAT del día ya disponible; no se vuelve a consultar.")
+        sunat_status = {
+            "estado": "cache_del_dia", "actualizado": False,
+            "dias": len(cached["dias"]), "mes": cached["mes"],
+        }
     else:
-        sunat_mensual = await _safe_call("SUNAT", scrap_sunat(), sem, timeout_s=90)
-
-        # SUNAT: aquí NO usamos validate_and_tag_to_source (es otro payload)
-        if isinstance(sunat_mensual, dict) and isinstance(sunat_mensual.get("dias"), list) and sunat_mensual["dias"]:
-            payload = {**sunat_mensual, "run_date": hoy_lima, "run_at_utc": run_at}
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            print(f"✅ SUNAT mensual guardado en {out_path} (dias={len(sunat_mensual['dias'])})")
-        else:
-            payload = {
-                "casa": "SUNAT",
-                "run_date": hoy_lima,
-                "run_at_utc": run_at,
-                "dias": [],
-                "error": (sunat_mensual.get("error") if isinstance(sunat_mensual, dict) else "unknown"),
-                "error_type": (sunat_mensual.get("error_type") if isinstance(sunat_mensual, dict) else "unknown"),
-                "traceback_last_lines": (sunat_mensual.get("traceback_last_lines") if isinstance(sunat_mensual, dict) else None),
+        sunat_result = await _safe_call("SUNAT", scrap_sunat(), sem, timeout_s=90)
+        if valid_sunat(sunat_result):
+            # No divulgar HTML de rechazo, mensajes HTTP ni trazas en SUNAT KV.
+            public_keys = ("casa", "url", "mes", "captured_at_utc", "dias", "total_dias", "source")
+            payload = {k: sunat_result[k] for k in public_keys if k in sunat_result}
+            payload.update({"run_date": hoy_lima, "run_at_utc": run_at})
+            if sunat_result.get("warning"):
+                payload["warning"] = "Se utilizó el método alternativo de extracción de SUNAT."
+            atomic_json(out_path, payload)
+            sunat_status = {
+                "estado": "actualizado", "actualizado": True,
+                "dias": len(payload["dias"]), "mes": payload["mes"],
             }
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            print("⚠️ SUNAT mensual FALLÓ. Se guardó sunat_mensual.json con error para no romper el workflow.")
+            print(f"✅ SUNAT válido guardado ({len(payload['dias'])} días)")
+        elif cached is not None:
+            # Conserva la última versión válida. Podría pertenecer a un mes
+            # anterior: la fecha de referencia en el JSON no se falsifica.
+            sunat_status = {
+                "estado": "conservado_por_error", "actualizado": False,
+                "dias": len(cached["dias"]), "mes": cached["mes"],
+            }
+            print("⚠️ SUNAT no respondió: se mantiene el último mes válido en KV.")
+        else:
+            # No hay ninguna versión válida local; tampoco se hará PUT de SUNAT.
+            if os.path.isfile(out_path):
+                os.remove(out_path)
+            sunat_status["estado"] = "sin_datos_por_error"
+            print("⚠️ SUNAT sin datos válidos; se omite su publicación en KV.")
+
+    atomic_json("data/sunat_status.json", sunat_status)
+
+    # Un estado por casa, sea correcta, regular, missing, bloqueada o anómala.
+    diagnostico = make_diagnostics(
+        final, run_at_utc=run_at, run_date=hoy_lima,
+        run_id=run_id, sunat=sunat_status,
+    )
+    atomic_json("data/diagnostico_scrapers.json", diagnostico)
+    export_diagnostics_csv("data/diagnostico_scrapers.csv", diagnostico)
+    print(f"🩺 Diagnóstico: {diagnostico['validas']}/{diagnostico['total']} casas válidas")
+
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        write_action_summary(diagnostico, summary_path)
 
 
 if __name__ == "__main__":

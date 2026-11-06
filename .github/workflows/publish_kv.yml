@@ -3,17 +3,24 @@ name: Scrape and publish to Cloudflare KV
 on:
   workflow_dispatch:
 
+# Evita interrumpir una corrida que ya inició. Si se generan muchos disparos,
+# GitHub puede reemplazar ejecuciones pendientes; este no es un sistema de colas.
 concurrency:
   group: scrape-and-publish
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   run:
     runs-on: ubuntu-22.04
+    timeout-minutes: 12
     env:
       PLAYWRIGHT_BROWSERS_PATH: 0
       TUCAMBISTA_OCP_KEY: ${{ secrets.TUCAMBISTA_OCP_KEY }}
       CAMBIX_OCP_KEY: ${{ secrets.CAMBIX_OCP_KEY }}
+      MIN_VALID_QUOTES: '30'
 
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +28,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
+
+      - name: Test infrastructure without network
+        run: python -m unittest discover -s tests -v
 
       - name: Install dependencies
         run: |
@@ -33,88 +43,53 @@ jobs:
           python -m playwright --version
           python -m playwright install chromium
 
-      # ✅ Solo borra lo que siempre se regenera en cada run
-      - name: Clean previous output
-        run: |
-          rm -f data/tasas.json data/meta.json || true
-          mkdir -p data
-
-      # ✅ IMPORTANTÍSIMO:
-      # El runner es nuevo cada vez, así que bajamos el sunat_mensual.json actual desde KV.
-      # Esto permite que run_scrapers.py detecte "ya se corrió hoy" y haga SKIP.
-      - name: Download existing sunat_mensual.json from Cloudflare KV (if any)
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+      - name: Prepare output folder
         run: |
           mkdir -p data
-        
-          curl -sS \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/sunat_mensual.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -o data/sunat_mensual.json || true
+          rm -f data/meta.json data/diagnostico_scrapers.json data/diagnostico_scrapers.csv data/sunat_status.json
 
-          # borrar si está vacío
-          if [ ! -s data/sunat_mensual.json ]; then
-          rm -f data/sunat_mensual.json || true
-          exit 0
-          fi
-
-          # borrar si no parece JSON
-          first_char=$(head -c 1 data/sunat_mensual.json || true)
-          if [ "$first_char" != "{" ] && [ "$first_char" != "[" ]; then
-          rm -f data/sunat_mensual.json || true
-          fi
-
-      - name: Run scrapers
-        run: |
-          python run_scrapers.py
-
-      - name: Verify output exists
-        run: |
-          test -f data/tasas.json
-          test -f data/meta.json
-          test -f data/sunat_mensual.json
-
-          echo "meta.json:"
-          cat data/meta.json
-
-          echo "sunat_mensual.json (head):"
-          head -n 40 data/sunat_mensual.json || true
-
-      - name: Upload tasas.json to Cloudflare KV
+      # GitHub runner is ephemeral. Reuse existing SUNAT month if valid.
+      # A 404 (key not created yet) is acceptable; invalid credentials are not.
+      - name: Download valid SUNAT history from Cloudflare KV
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: |
-          curl -f -sS -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/tasas.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-binary @data/tasas.json
+        run: python -m infra.cloudflare_kv download-sunat
 
-      - name: Upload meta.json to Cloudflare KV
+      - name: Run all scrapers and generate diagnostics
+        run: python run_scrapers.py
+
+      - name: Verify diagnostics exist
+        run: |
+          test -s data/tasas.json
+          test -s data/meta.json
+          test -s data/diagnostico_scrapers.json
+          test -s data/diagnostico_scrapers.csv
+          test -s data/sunat_status.json
+          python -m json.tool data/meta.json >/dev/null
+          python -m json.tool data/diagnostico_scrapers.json >/dev/null
+          echo 'Revisa la pestaña Summary para ver las casas con problemas.'
+
+      # Downloadable even if publication is refused; no private tracebacks.
+      - name: Upload diagnostics as GitHub Actions artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostico-scrapers-${{ github.run_id }}
+          path: |
+            data/diagnostico_scrapers.json
+            data/diagnostico_scrapers.csv
+            data/meta.json
+            data/sunat_status.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      # Validate batch BEFORE any write. Existing KV keys stay unchanged if
+      # too few scrapers succeeded. SUNAT only writes when newly refreshed.
+      - name: Validate and publish safely to Cloudflare KV
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: |
-          curl -f -sS -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/meta.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-binary @data/meta.json
-
-      - name: Upload sunat_mensual.json to Cloudflare KV
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: |
-          curl -f -sS -X PUT \
-            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/sunat_mensual.json" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data-binary @data/sunat_mensual.json
+        run: python -m infra.cloudflare_kv publish

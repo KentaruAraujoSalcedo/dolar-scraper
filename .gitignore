@@ -219,3 +219,10 @@ Thumbs.db
 
 
 
+
+# Archivos generados por el pipeline: se descargan desde GitHub Actions / KV.
+data/meta.json
+data/diagnostico_scrapers.json
+data/diagnostico_scrapers.csv
+data/sunat_mensual.json
+data/sunat_status.json
