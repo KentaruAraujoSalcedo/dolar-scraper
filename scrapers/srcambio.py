@@ -1,4 +1,8 @@
-"""Cotizaciones públicas de SrCambio (USD/PEN)."""
+"""Cotizaciones públicas USD/PEN de SrCambio.
+
+La API puede mostrar tasas aunque la casa esté cerrada. Conservamos las
+cotizaciones, pero indicamos explícitamente si la casa está abierta.
+"""
 
 import httpx
 
@@ -11,16 +15,18 @@ async def scrap_srcambio():
     endpoint = "https://novodivisaspro.pseperu.pro/api/digital/public/tc"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "es-PE,es;q=0.9",
-        "Origin": url.rstrip("/"),
+        "Origin": "https://srcambio.pe",
         "Referer": url,
         "X-Digital-Tenant": "sr-cambio",
     }
 
-    def resultado(compra=None, venta=None, estado="error", error=None):
+    def resultado(compra=None, venta=None, estado="error", error=None, abierto=None):
         salida = {
             "casa": casa,
             "url": url,
@@ -28,6 +34,8 @@ async def scrap_srcambio():
             "venta": venta,
             "estado": estado,
         }
+        if abierto is not None:
+            salida["abierto"] = abierto
         if error:
             salida["error"] = error
         return salida
@@ -46,11 +54,12 @@ async def scrap_srcambio():
         if data.get("moneda") != "USD":
             return resultado(error="La API no devolvió una cotización USD")
 
-        # Evitar publicar como operativas tasas de una casa cerrada.
-        # El campo serverTime es la hora del servidor, no necesariamente
-        # la hora de la última modificación de la tasa.
-        if data.get("disponible") is not True or data.get("abierto") is not True:
-            return resultado(estado="cerrado")
+        if data.get("disponible") is not True:
+            return resultado(estado="no_disponible")
+
+        abierto = data.get("abierto")
+        if not isinstance(abierto, bool):
+            return resultado(error="La API no informó un estado de atención válido")
 
         compra_raw = data.get("compra")
         venta_raw = data.get("venta")
@@ -66,9 +75,18 @@ async def scrap_srcambio():
         ):
             return resultado(error="Tasas de compra o venta ausentes o inválidas")
 
-        return resultado(compra=compra, venta=venta, estado="abierto")
+        # La página de SrCambio presenta las tasas aun estando cerrada.
+        # No interpretamos serverTime como la fecha de actualización del precio.
+        return resultado(
+            compra=compra,
+            venta=venta,
+            estado="abierto" if abierto else "cerrado",
+            abierto=abierto,
+        )
 
     except httpx.HTTPStatusError as exc:
         return resultado(error=f"La API respondió HTTP {exc.response.status_code}")
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        return resultado(error=f"No se pudo consultar o interpretar SrCambio: {type(exc).__name__}")
+        return resultado(
+            error=f"No se pudo consultar o interpretar SrCambio: {type(exc).__name__}"
+        )
