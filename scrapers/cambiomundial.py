@@ -1,183 +1,113 @@
-import re
+"""Cotización de Cambio Mundial desde el JSON utilizado por su página pública.
+
+La web mostró el 07/11/2026 la tasa REGULAR para montos >= USD 1,000.
+Si cambia el endpoint o el proveedor restringe el acceso automatizado,
+se devuelve un error diagnosticable sin intentar sortear esa restricción.
+"""
+
 import httpx
+
 from scrapers.utils import normalize_rate
 
 
-def _snippet(s: str, n=600) -> str:
-    return (s or "").replace("\r", "").replace("\n", " ")[:n]
+CASA = "cambiomundial"
+URL = "https://www.cambiomundial.com/"
+ENDPOINT = "https://www.cambiomundial.com/backend/tasaCambio/daily"
 
 
-def _is_cloudflare_challenge(html: str) -> bool:
-    h = (html or "").lower()
-    return any(x in h for x in [
-        "un momento",
-        "just a moment",
-        "/cdn-cgi/",
-        "cf-chl-",
-        "cf-ray",
-        "cloudflare",
-        "attention required",
-        "checking your browser",
-        "verify you are human",
-        "captcha",
-    ])
-
-
-def _extract_by_label_id(html: str, label_id: str) -> str | None:
-    m = re.search(
-        rf"id=['\"]{re.escape(label_id)}['\"][^>]*>\s*([0-9]+[.,][0-9]{{3,4}})\s*<",
-        html, re.I
-    )
-    return m.group(1) if m else None
-
-
-def _extract_by_input_id(html: str, input_id: str) -> str | None:
-    m = re.search(
-        rf"id=['\"]{re.escape(input_id)}['\"][^>]*value=['\"]\s*([0-9]+[.,][0-9]{{3,6}})\s*['\"]",
-        html, re.I
-    )
-    return m.group(1) if m else None
-
-
-def _parse_rates(html: str):
-    compra_raw = (
-        _extract_by_label_id(html, "lblValorCompra")
-        or _extract_by_input_id(html, "txtValorCompra")
-    )
-    venta_raw = (
-        _extract_by_label_id(html, "lblValorVenta")
-        or _extract_by_input_id(html, "txtValorVenta")
-    )
-
-    compra = normalize_rate(compra_raw) if compra_raw else None
-    venta = normalize_rate(venta_raw) if venta_raw else None
-    return compra, venta
-
-
-async def _fetch_html_playwright(target_url: str) -> str:
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(
-            locale="es-PE",
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        )
-        page = await context.new_page()
-
-        await page.goto("https://www.cambiomundial.com/", wait_until="domcontentloaded", timeout=45000)
-        await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-
-        try:
-            await page.wait_for_selector("label#lblValorCompra, input#txtValorCompra", timeout=20000)
-        except Exception:
-            html = await page.content()
-            await browser.close()
-            return html
-
-        html = await page.content()
-        await browser.close()
-        return html
-
-
-async def scrap_cambiomundial():
-    casa = "cambiomundial"
-    url = "https://www.cambiomundial.com/"
-    endpoint = "https://www.cambiomundial.com/appcm/tpc/tipocambio/index"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "es-PE,es;q=0.9",
-        "Accept": "text/html,application/xhtml+xml",
-        "Referer": url,
+def _fallo(codigo: str, motivo: str, *, bloqueado: bool = False) -> dict:
+    return {
+        "casa": CASA,
+        "url": URL,
+        "compra": None,
+        "venta": None,
+        "estado": "bloqueado" if bloqueado else "error",
+        "source": "blocked" if bloqueado else "missing",
+        "error_type": codigo,
+        "error": motivo,
     }
 
-    timeout = httpx.Timeout(25.0, connect=10.0)
 
-    # 1) HTTPX
+def _es_desafio(texto: str) -> bool:
+    """Detecta páginas de desafío; no confunde el JSON normal con un bloqueo."""
+    contenido = (texto or "").lower()
+    return any(marca in contenido for marca in (
+        "just a moment", "checking your browser", "verify you are human",
+        "cf-chl-", "/cdn-cgi/challenge-platform/", "attention required",
+    ))
+
+
+def _tasa_regular(datos: object) -> tuple[float | None, float | None]:
+    """Solo utiliza el registro REGULAR: nunca confunde tasa diferenciada."""
+    if not isinstance(datos, list):
+        return None, None
+
+    for registro in datos:
+        if not isinstance(registro, dict):
+            continue
+        if str(registro.get("tipoTasa", "")).strip().upper() != "REGULAR":
+            continue
+
+        compra = normalize_rate(registro.get("buy"))
+        venta = normalize_rate(registro.get("sell"))
+        if compra is None or venta is None or compra > venta:
+            return None, None
+        return compra, venta
+
+    return None, None
+
+
+async def scrap_cambiomundial() -> dict:
+    """Devuelve el esquema esperado por run_scrapers.py."""
+    cabeceras = {
+        "Accept": "application/json",
+        "Accept-Language": "es-PE,es;q=0.9",
+    }
+    timeout = httpx.Timeout(20.0, connect=10.0)
+
     try:
-        async with httpx.AsyncClient(headers=headers, timeout=timeout, follow_redirects=True) as client:
-            await client.get(url)  # warm-up cookies
-            r = await client.get(endpoint)
-            r.raise_for_status()
+        async with httpx.AsyncClient(
+            headers=cabeceras, timeout=timeout, follow_redirects=True
+        ) as cliente:
+            respuesta = await cliente.get(ENDPOINT)
+    except httpx.TimeoutException:
+        return _fallo("timeout", "Tiempo de espera agotado al consultar la API")
+    except httpx.RequestError as exc:
+        return _fallo("error", f"Fallo de conexión ({type(exc).__name__})")
 
-            html = r.text or ""
+    if respuesta.status_code in (403, 429):
+        return _fallo(
+            f"blocked_{respuesta.status_code}",
+            f"Acceso rechazado por Cambio Mundial (HTTP {respuesta.status_code})",
+            bloqueado=True,
+        )
 
-            if _is_cloudflare_challenge(html):
-                return {
-                    "casa": casa,
-                    "url": url,
-                    "compra": None,
-                    "venta": None,
-                    "estado": "bloqueado",
-                    "source": "blocked",
-                    "error_type": "blocked_cloudflare",
-                    "error": f"Cloudflare challenge (httpx). snip={_snippet(html)}",
-                }
+    if _es_desafio(respuesta.text):
+        return _fallo(
+            "blocked_cloudflare", "El proveedor solicita una comprobación de acceso",
+            bloqueado=True,
+        )
 
-            compra, venta = _parse_rates(html)
-            if compra is not None and venta is not None:
-                return {
-                    "casa": casa,
-                    "url": url,
-                    "compra": compra,
-                    "venta": venta,
-                    "estado": "abierto",
-                    "source": "httpx",
-                }
-    except Exception:
-        pass
+    if respuesta.status_code != 200:
+        return _fallo(
+            f"http_{respuesta.status_code}",
+            f"El endpoint respondió HTTP {respuesta.status_code}",
+        )
 
-    # 2) PLAYWRIGHT
     try:
-        html2 = await _fetch_html_playwright(endpoint)
+        datos = respuesta.json()
+    except ValueError:
+        return _fallo("parse_error", "El endpoint no devolvió JSON válido")
 
-        if _is_cloudflare_challenge(html2):
-            return {
-                "casa": casa,
-                "url": url,
-                "compra": None,
-                "venta": None,
-                "estado": "bloqueado",
-                "source": "blocked",
-                "error_type": "blocked_cloudflare",
-                "error": f"Cloudflare challenge (playwright). snip={_snippet(html2)}",
-            }
+    compra, venta = _tasa_regular(datos)
+    if compra is None or venta is None:
+        return _fallo("missing_rates", "No se encontró una tasa REGULAR válida con buy y sell")
 
-        compra2, venta2 = _parse_rates(html2)
-        if compra2 is not None and venta2 is not None:
-            return {
-                "casa": casa,
-                "url": url,
-                "compra": compra2,
-                "venta": venta2,
-                "estado": "abierto",
-                "source": "playwright",
-            }
-
-        return {
-            "casa": casa,
-            "url": url,
-            "compra": None,
-            "venta": None,
-            "estado": "error",
-            "source": "missing",
-            "error_type": "parse_error",
-            "error": f"No se pudieron extraer IDs lblValorCompra/lblValorVenta. snip={_snippet(html2)}",
-        }
-
-    except Exception as e:
-        return {
-            "casa": casa,
-            "url": url,
-            "compra": None,
-            "venta": None,
-            "estado": "error",
-            "source": "missing",
-            "error_type": "error",
-            "error": str(e),
-        }
+    return {
+        "casa": CASA,
+        "url": URL,
+        "compra": compra,
+        "venta": venta,
+        "estado": "abierto",
+        "source": "httpx",
+    }
