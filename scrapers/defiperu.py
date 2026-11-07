@@ -3,8 +3,8 @@ from scrapers.utils import normalize_rate
 
 async def scrap_defiperu():
     casa = "defiperu"
-    url = "https://defiperu.com/change/FIAT"
-    endpoint = "https://defi.frojo.dev/api/ExchangeRates/currencyType"
+    url = "https://www.defiperu.pe/"
+    endpoint = "https://api.defiperu.com/api/ExchangeRates/currencyType"
     params = {"currencyType": "FIAT"}
 
     headers = {
@@ -12,8 +12,8 @@ async def scrap_defiperu():
                       "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept-Language": "es-PE,es;q=0.9,en;q=0.8",
         "Accept": "application/json, text/plain, */*",
-        "Referer": "https://defiperu.com/",
-        "Origin": "https://defiperu.com",
+        "Referer": "https://www.defiperu.pe/",
+        "Origin": "https://www.defiperu.pe",
     }
 
     try:
