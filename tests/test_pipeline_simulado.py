@@ -71,8 +71,11 @@ class SimulatedPipelineTests(unittest.TestCase):
                     Path("data/sunat_mensual.json").write_text(json.dumps(cached))
                     async def failing_sunat():
                         raise RuntimeError("temporary failure, sensitive detail")
+
                     runner.scrap_sunat = failing_sunat
-                    asyncio.run(runner.main())
+
+                    with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}):
+                        asyncio.run(runner.main())
                     after = json.loads(Path("data/sunat_mensual.json").read_text())
                     status = json.loads(Path("data/sunat_status.json").read_text())
                     self.assertEqual(after, cached)
