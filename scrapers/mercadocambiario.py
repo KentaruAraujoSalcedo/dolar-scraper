@@ -1,193 +1,134 @@
+"""Cotizaciones públicas de Mercado Cambiario.
+
+Usa el libro de órdenes vigente y el TradeFee que devuelve la configuración
+pública. No reutiliza operaciones finalizadas como cotizaciones actuales.
+
+IMPORTANTE: El acceso desde GitHub Actions puede seguir recibiendo HTTP 403.
+Este módulo NO intenta superar las restricciones de acceso del proveedor.
+"""
+
+from decimal import Decimal, InvalidOperation
+
 import httpx
-import json
+
 from scrapers.utils import normalize_rate
-from playwright.async_api import async_playwright
+
+CASA = "mercadocambiario"
+HOME = "https://www.mercadocambiario.pe/"
+ORDERS_ENDPOINT = "https://www.mercadocambiario.pe/api/order/get/actives-all"
+CONFIG_ENDPOINT = "https://www.mercadocambiario.pe/api/mercado/get/admin-data"
+
+HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "es-PE,es;q=0.9",
+    "Content-Type": "application/json",
+    "Origin": HOME.rstrip("/"),
+    "Referer": HOME,
+}
 
 
-def _extract_rates(data):
-    rates = []
-    if isinstance(data, list):
-        for block in data:
-            if not isinstance(block, dict):
-                continue
-            for o in block.get("successfulOrders", []) or []:
-                if not isinstance(o, dict):
-                    continue
-                x = o.get("typeExchangeAmount")
-                try:
-                    p = float(x)
-                except Exception:
-                    continue
-                if 2.8 <= p <= 4.2:
-                    rates.append(p)
-    return rates
+def _decimal(value):
+    """Interpreta solo números finitos (sin bool, NaN ni infinito)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    return number if number.is_finite() else None
 
 
-async def _pw_fetch_actives_all(home_url: str, endpoint: str):
+def _calculate_rates(orders_payload, config_payload):
+    """Devuelve (compra, venta) desde la perspectiva de la CASA DE CAMBIO.
+
+    - 'buy' corresponde al precio base que el mercado paga por USD.
+    - 'sell' corresponde al precio base que cobra por USD.
+    - TradeFee.amount se resta de compra y se suma a venta.
+    - Solo considera órdenes con amountLeft > 0.
+    
+    Falla de forma segura si faltan órdenes o la comisión dinámica.
     """
-    Hace POST al endpoint desde el contexto del navegador (cookies/JS/session).
-    Esto puede pasar cuando httpx/curl-cffi reciben 403 en datacenter.
-    """
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ),
-            locale="es-PE",
-            viewport={"width": 1280, "height": 720},
-        )
-        page = await context.new_page()
+    if not isinstance(orders_payload, list) or not isinstance(config_payload, dict):
+        raise ValueError("respuesta_json_inesperada")
 
-        # Abre home para que setee cookies / session / cualquier JS
-        await page.goto(home_url, wait_until="networkidle", timeout=60000)
+    groups = [block.get("currentOrders") for block in orders_payload
+              if isinstance(block, dict) and isinstance(block.get("currentOrders"), list)]
+    if len(groups) != 1:
+        raise ValueError("currentOrders_no_disponible")
 
-        # Ejecuta fetch dentro del navegador
-        result = await page.evaluate(
-            """async (endpoint) => {
-                const res = await fetch(endpoint, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: "{}"
-                });
-                const text = await res.text();
-                return { status: res.status, text };
-            }""",
-            endpoint,
-        )
+    active_buy = []
+    active_sell = []
+    for order in groups[0]:
+        if not isinstance(order, dict):
+            continue
+        remaining = _decimal(order.get("amountLeft"))
+        rate = _decimal(order.get("typeExchangeAmount"))
+        if remaining is None or remaining <= 0 or rate is None or not Decimal("2.8") <= rate <= Decimal("4.2"):
+            continue
+        if order.get("typeOperation") == "buy":
+            active_buy.append(rate)
+        elif order.get("typeOperation") == "sell":
+            active_sell.append(rate)
 
-        await browser.close()
+    if not active_buy or not active_sell:
+        raise ValueError("ordenes_activas_insuficientes")
 
-    if result["status"] != 200:
-        raise RuntimeError(
-            f"playwright_fetch_status={result['status']} snip={result['text'][:200]}"
-        )
+    trade_fees = config_payload.get("TradeFee")
+    if not isinstance(trade_fees, list) or len(trade_fees) != 1 or not isinstance(trade_fees[0], dict):
+        raise ValueError("TradeFee_no_disponible")
+    fee = _decimal(trade_fees[0].get("amount"))
+    if fee is None or not Decimal("0") <= fee <= Decimal("0.05"):
+        raise ValueError("TradeFee_fuera_de_rango")
 
-    return json.loads(result["text"])
+    compra = max(active_buy) - fee
+    venta = min(active_sell) + fee
+    if not (Decimal("2.8") <= compra < venta <= Decimal("4.2")):
+        raise ValueError("tasas_incoherentes")
+
+    return compra, venta
+
+
+def _failed(reason, error_type="error"):
+    return {
+        "casa": CASA,
+        "url": HOME,
+        "compra": None,
+        "venta": None,
+        "estado": "error",
+        "error_type": error_type,
+        "error": reason,
+        "source": "actives-all_httpx_orderbook_fee",
+    }
 
 
 async def scrap_mercadocambiario():
-    casa = "mercadocambiario"
-    url = "https://www.mercadocambiario.pe/"
-    endpoint = "https://www.mercadocambiario.pe/api/order/get/actives-all"
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "es-PE,es;q=0.9,en;q=0.8",
-        "Origin": "https://www.mercadocambiario.pe",
-        "Referer": "https://www.mercadocambiario.pe/",
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-    }
-
-    # --- 1) intento httpx (rápido) ---
     try:
-        async with httpx.AsyncClient(headers=headers, timeout=25, follow_redirects=True) as client:
-            await client.get(url)
-            r = await client.post(endpoint, json={})
-            if r.status_code == 403:
-                raise RuntimeError("blocked_403_httpx")
-            r.raise_for_status()
-            data = r.json()
+        async with httpx.AsyncClient(headers=HEADERS, timeout=25, follow_redirects=True) as client:
+            # Mantener la visita inicial como en el scraper original.
+            await client.get(HOME)
+            orders_response = await client.post(ORDERS_ENDPOINT, json={})
+            orders_response.raise_for_status()
+            config_response = await client.post(CONFIG_ENDPOINT, json={})
+            config_response.raise_for_status()
+            orders_payload = orders_response.json()
+            config_payload = config_response.json()
 
-        rates = _extract_rates(data)
-        if not rates:
-            return {
-                "casa": casa, "url": url,
-                "compra": None, "venta": None,
-                "estado": "error",
-                "error": "No rates válidos (httpx).",
-                "source": "actives-all_httpx",
-            }
-
+        compra, venta = _calculate_rates(orders_payload, config_payload)
         return {
-            "casa": casa,
-            "url": url,
-            "compra": normalize_rate(str(max(rates))),
-            "venta": normalize_rate(str(min(rates))),
+            "casa": CASA,
+            "url": HOME,
+            "compra": normalize_rate(str(compra)),
+            "venta": normalize_rate(str(venta)),
             "estado": "abierto",
-            "source": "actives-all_httpx_minmax",
-            "n_rates": len(rates),
+            "source": "actives-all_httpx_orderbook_fee",
         }
-
-    except Exception as e_httpx:
-        # --- 2) fallback curl-cffi ---
-        try:
-            from curl_cffi import requests as creq
-
-            creq.get(url, headers=headers, impersonate="chrome120", timeout=25)
-            rr = creq.post(endpoint, headers=headers, json={}, impersonate="chrome120", timeout=25)
-
-            if rr.status_code == 403:
-                raise RuntimeError("blocked_403_curlcffi")
-
-            if rr.status_code >= 400:
-                return {
-                    "casa": casa, "url": url,
-                    "compra": None, "venta": None,
-                    "estado": "error",
-                    "error": f"blocked_status={rr.status_code} (curl_cffi). snip={rr.text[:200]}",
-                    "source": "actives-all_curlcffi",
-                }
-
-            data = rr.json()
-            rates = _extract_rates(data)
-            if not rates:
-                return {
-                    "casa": casa, "url": url,
-                    "compra": None, "venta": None,
-                    "estado": "error",
-                    "error": "No rates válidos (curl_cffi).",
-                    "source": "actives-all_curlcffi",
-                }
-
-            return {
-                "casa": casa,
-                "url": url,
-                "compra": normalize_rate(str(max(rates))),
-                "venta": normalize_rate(str(min(rates))),
-                "estado": "abierto",
-                "source": "actives-all_curlcffi_minmax",
-                "n_rates": len(rates),
-            }
-
-        except Exception as e_curl:
-            # --- 3) fallback Playwright (fetch dentro del navegador) ---
-            try:
-                data = await _pw_fetch_actives_all(url, endpoint)
-                rates = _extract_rates(data)
-                if not rates:
-                    return {
-                        "casa": casa, "url": url,
-                        "compra": None, "venta": None,
-                        "estado": "error",
-                        "error": "No rates válidos (playwright_fetch).",
-                        "source": "actives-all_playwright_fetch",
-                    }
-
-                return {
-                    "casa": casa,
-                    "url": url,
-                    "compra": normalize_rate(str(max(rates))),
-                    "venta": normalize_rate(str(min(rates))),
-                    "estado": "abierto",
-                    "source": "actives-all_playwright_fetch_minmax",
-                    "n_rates": len(rates),
-                }
-
-            except Exception as e_pw:
-                return {
-                    "casa": casa, "url": url,
-                    "compra": None, "venta": None,
-                    "estado": "error",
-                    "error": f"httpx_fail={e_httpx} | curl_cffi_fail={e_curl} | playwright_fail={e_pw}",
-                }
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        reason = f"blocked_403: proveedor rechazó acceso ({status})" if status == 403 else f"http_{status}: respuesta del proveedor"
+        return _failed(reason, "blocked_403" if status == 403 else f"http_{status}")
+    except (httpx.RequestError, ValueError) as exc:
+        # No registrar cuerpos de respuesta, cookies ni cabeceras privadas.
+        reason = str(exc) if isinstance(exc, ValueError) else f"network_{type(exc).__name__}"
+        return _failed(reason)
+    except Exception as exc:
+        return _failed(f"unexpected_{type(exc).__name__}")
