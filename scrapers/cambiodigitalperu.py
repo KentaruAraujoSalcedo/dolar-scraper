@@ -4,6 +4,7 @@ Ruta observada en DevTools el 6 de noviembre de 2026:
     https://novodivisaspro.pseperu.pro/api/digital/public/tc
 
 La respuesta incluye: disponible, compra, venta, moneda, abierto, serverTime.
+Utiliza la cabecera pública X-Digital-Tenant observada en DevTools.
 No utiliza tokens, cookies ni datos de otros proveedores.
 """
 
@@ -26,6 +27,9 @@ HEADERS = {
     "Accept-Language": "es-PE,es;q=0.9",
     "Origin": URL,
     "Referer": URL + "/",
+    # Cabecera presente en la solicitud real de CambioDigitalPerú (DevTools).
+    # Sin ella, el servidor puede devolver HTTP 404 incluso con la ruta correcta.
+    "X-Digital-Tenant": "cambio-digital",
 }
 
 
